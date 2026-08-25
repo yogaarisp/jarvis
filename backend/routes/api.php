@@ -63,8 +63,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/settings/test-ai', [SettingController::class, 'testAi']);
     Route::post('/settings/test-hermes', [SettingController::class, 'testHermes']);
 
-    // PRD §7 — TTS neural server (suara JARVIS, en-GB-RyanNeural).
+    // PRD §7 — TTS neural server (ElevenLabs JARVIS / Edge TTS fallback).
     Route::get('/tts', [TtsController::class, 'speak']);
+    Route::get('/tts/voices', [TtsController::class, 'voices']);
+    Route::post('/tts/clone-voice', [TtsController::class, 'cloneVoice']);
 
     // PRD §17 — Memory: skill & memori jangka panjang JARVIS.
     Route::get('/skills', [SkillController::class, 'index']);

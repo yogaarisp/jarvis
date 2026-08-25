@@ -11,3 +11,10 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Python
+ai/venv/
+ai/.models/
+ai/clone-test.log
+__pycache__/
+*.py[cod]

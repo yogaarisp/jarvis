@@ -118,8 +118,8 @@ export function CorePage() {
     sessionStorage.setItem('jarvis_greeted', '1')
     const prefs = loadVoicePrefs()
     const greeting = prefs.language.startsWith('id')
-      ? 'Semua sistem online dan siap, Bos.'
-      : 'All systems online and operational, Boss.'
+      ? 'Sistem Online.'
+      : 'All systems online and operational'
     setLatestTransmission(greeting)
     setMessages((prev) =>
       prev.length === 0 ? [{ id: Date.now(), role: 'assistant', content: greeting }] : prev,

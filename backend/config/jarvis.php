@@ -17,13 +17,30 @@ return [
         'max_iterations' => (int) env('JARVIS_RESEARCH_MAX_ITERATIONS', 2),
     ],
 
-    // PRD §7 — TTS neural sisi server (Microsoft Edge TTS, gratis tanpa API key).
+    // PRD §7 — TTS neural sisi server.
+    // engine: 'auto' = ElevenLabs bila key+voice tersedia, fallback Edge TTS;
+    //         'elevenlabs' = paksa ElevenLabs; 'edge' = paksa Edge TTS (gratis).
     // Voice default en-GB-RyanNeural = pria Inggris kalem ala JARVIS.
     'tts' => [
+        'engine' => env('JARVIS_TTS_ENGINE', 'auto'),
         'voice' => env('JARVIS_TTS_VOICE', 'en-GB-RyanNeural'),
         'rate' => env('JARVIS_TTS_RATE', '-4%'),
         'pitch' => env('JARVIS_TTS_PITCH', '-2Hz'),
         'max_chars' => 600,
         'cache_ttl' => 86400,
+
+        // ElevenLabs — suara JARVIS hasil voice cloning / voice komunitas.
+        // Model multilingual mendukung bahasa Indonesia.
+        'elevenlabs' => [
+            'api_key' => env('ELEVENLABS_API_KEY'),
+            'voice_id' => env('ELEVENLABS_VOICE_ID'),
+            'model_id' => env('ELEVENLABS_MODEL_ID', 'eleven_multilingual_v2'),
+            'output_format' => env('ELEVENLABS_OUTPUT_FORMAT', 'mp3_44100_128'),
+            'stability' => (float) env('ELEVENLABS_STABILITY', 0.5),
+            'similarity_boost' => (float) env('ELEVENLABS_SIMILARITY', 0.75),
+            'style' => (float) env('ELEVENLABS_STYLE', 0.0),
+            'speaker_boost' => (bool) env('ELEVENLABS_SPEAKER_BOOST', true),
+            'timeout' => (int) env('ELEVENLABS_TIMEOUT', 30),
+        ],
     ],
 ];
