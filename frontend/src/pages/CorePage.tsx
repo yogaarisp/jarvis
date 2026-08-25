@@ -112,14 +112,13 @@ export function CorePage() {
     return () => engine.cancel()
   }, [ttsAvailable, voicePrefs])
 
-  // Initial welcome greeting
+  // Initial welcome greeting — time-aware, ditampilkan & diucapkan tiap halaman dibuka/refresh
   useEffect(() => {
-    if (sessionStorage.getItem('jarvis_greeted')) return
-    sessionStorage.setItem('jarvis_greeted', '1')
-    const prefs = loadVoicePrefs()
-    const greeting = prefs.language.startsWith('id')
-      ? 'Sistem Online.'
-      : 'All systems online and operational'
+    const h = new Date().getHours()
+    const waktu =
+      h >= 4 && h <= 10 ? 'pagi' : h >= 11 && h <= 14 ? 'siang' : h >= 15 && h <= 17 ? 'sore' : 'malam'
+    const greeting = `Selamat ${waktu}, Keenan! My Name is JARVIS, Asisten AI.`
+
     setLatestTransmission(greeting)
     setMessages((prev) =>
       prev.length === 0 ? [{ id: Date.now(), role: 'assistant', content: greeting }] : prev,
@@ -393,23 +392,23 @@ export function CorePage() {
   return (
     <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-jarvis-bg text-cyan-50 tech-grid">
       {/* Top HUD Header Bar */}
-      <header className="relative z-30 flex shrink-0 items-center justify-between px-4 py-2 border-b border-cyan-500/20 bg-cyan-950/40 backdrop-blur-md">
+      <header className="relative z-30 flex shrink-0 items-center justify-between px-2 sm:px-4 py-1.5 sm:py-2 border-b border-cyan-500/20 bg-cyan-950/40 backdrop-blur-md">
         {/* Left Badge: KEETECH // JARVIS */}
-        <div className="flex items-center gap-2">
-          <div className="hud-badge rounded px-3 py-1 border border-cyan-400/40 bg-cyan-950/60">
-            <div className="font-mono-tech text-[11px] font-bold tracking-[0.2em] text-cyan-400 text-glow-cyan">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="hud-badge rounded px-2 sm:px-3 py-1 border border-cyan-400/40 bg-cyan-950/60">
+            <div className="font-mono-tech text-[10px] sm:text-[11px] font-bold tracking-[0.15em] sm:tracking-[0.2em] text-cyan-400 text-glow-cyan whitespace-nowrap">
               KEETECH // JARVIS
             </div>
-            <div className="font-mono-tech flex items-center gap-1.5 text-[9px] tracking-wider text-cyan-300/70">
+            <div className="font-mono-tech hidden sm:flex items-center gap-1.5 text-[9px] tracking-wider text-cyan-300/70">
               <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_#00e5ff]" />
               <span>@ SYS_ONLINE // VOICE DETECT</span>
             </div>
           </div>
         </div>
 
-        {/* Right Controls: HIDE LOGS + SETTINGS + TERMINATE */}
-        <div className="flex items-center gap-2.5">
-          {/* Navigation Links */}
+        {/* Right Controls */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5">
+          {/* Navigation Links - desktop only */}
           <div className="hidden lg:flex items-center gap-1 font-mono-tech text-xs tracking-widest text-cyan-400/70 mr-2">
             <button onClick={() => navigate('/missions')} className="px-2.5 py-1 rounded hover:bg-cyan-500/10 hover:text-cyan-300">
               MISSIONS
@@ -422,10 +421,10 @@ export function CorePage() {
             </button>
           </div>
 
-          {/* HIDE / SHOW LOGS Toggle */}
+          {/* HIDE / SHOW LOGS Toggle - hidden on mobile (logs column is hidden anyway) */}
           <button
             onClick={() => setShowLogs((prev) => !prev)}
-            className="hud-btn font-mono-tech flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-semibold tracking-widest text-cyan-300"
+            className="hud-btn font-mono-tech hidden sm:flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-semibold tracking-widest text-cyan-300"
           >
             <span>{showLogs ? 'HIDE LOGS' : 'SHOW LOGS'}</span>
             <span
@@ -449,22 +448,22 @@ export function CorePage() {
             </svg>
           </button>
 
-          {/* Terminate Button */}
+          {/* Terminate Button - compact on mobile */}
           <button
             onClick={async () => {
               await logout()
               navigate('/login', { replace: true })
             }}
-            className="hud-btn-danger font-mono-tech flex items-center gap-1.5 rounded px-2.5 py-1 text-[10px] font-bold tracking-widest text-rose-300"
+            className="hud-btn-danger font-mono-tech flex items-center gap-1 sm:gap-1.5 rounded px-2 sm:px-2.5 py-1 text-[10px] font-bold tracking-widest text-rose-300"
           >
-            <span>TERMINATE</span>
+            <span className="hidden sm:inline">TERMINATE</span>
             <span className="text-xs">✕</span>
           </button>
         </div>
       </header>
 
       {/* Main 3-Column Sci-Fi HUD Viewport */}
-      <main className="relative flex flex-1 min-h-0 w-full p-3 gap-3">
+      <main className="relative flex flex-1 min-h-0 w-full p-2 sm:p-3 gap-2 sm:gap-3 pb-20 md:pb-3">
         {/* LEFT COLUMN: System Telemetry Panels (Hidden on very small screens, visible on md+) */}
         <div className="hidden md:flex w-72 shrink-0 flex-col gap-3 z-20 overflow-y-auto">
           <ChronoSyncPanel />

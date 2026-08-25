@@ -13,13 +13,16 @@ export const DEFAULT_VOICE_PREFS: VoicePrefs = {
   ttsServerVoice: 'en-GB-RyanNeural',
 }
 
-/** Voice neural server (Microsoft Edge TTS) — pilihan pria, ala JARVIS. */
-export const SERVER_VOICES: Array<{ id: string; label: string }> = [
-  { id: 'en-GB-RyanNeural', label: 'Ryan · Pria Inggris (JARVIS)' },
-  { id: 'en-GB-ThomasNeural', label: 'Thomas · Pria Inggris' },
-  { id: 'en-US-GuyNeural', label: 'Guy · Pria Amerika' },
-  { id: 'en-US-ChristopherNeural', label: 'Christopher · Pria Amerika (dalam)' },
-  { id: 'id-ID-ArdiNeural', label: 'Ardi · Pria Indonesia' },
+/** Voice neural server (Microsoft Edge TTS) — pilihan suara neural ala JARVIS & natural. */
+export const SERVER_VOICES: Array<{ id: string; label: string; desc?: string; accent?: string }> = [
+  { id: 'en-GB-RyanNeural', label: 'Ryan · Pria British (JARVIS)', desc: 'British English formal & berwibawa ala JARVIS', accent: 'British' },
+  { id: 'en-GB-ThomasNeural', label: 'Thomas · Pria British', desc: 'British English natural, artikulasi jernih', accent: 'British' },
+  { id: 'en-US-EricNeural', label: 'Eric · Pria Amerika', desc: 'US English percaya diri & modern', accent: 'American' },
+  { id: 'en-US-AndrewNeural', label: 'Andrew · Pria Amerika', desc: 'US English hangat & santai', accent: 'American' },
+  { id: 'id-ID-ArdiNeural', label: 'Ardi · Pria Indonesia', desc: 'Bahasa Indonesia intonasi formal & jelas', accent: 'Indonesian' },
+  { id: 'id-ID-GadisNeural', label: 'Gadis · Wanita Indonesia', desc: 'Bahasa Indonesia wanita natural & ramah', accent: 'Indonesian' },
+  { id: 'en-US-GuyNeural', label: 'Guy · Pria Amerika', desc: 'US English kasual & standar', accent: 'American' },
+  { id: 'en-US-ChristopherNeural', label: 'Christopher · Pria Amerika (Deep)', desc: 'US English bernada berat & dalam', accent: 'American' },
 ]
 
 export function loadVoicePrefs(): VoicePrefs {

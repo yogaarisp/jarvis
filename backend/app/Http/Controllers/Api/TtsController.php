@@ -116,31 +116,201 @@ class TtsController extends Controller
     }
 
     /**
-     * GET /api/tts/voices — daftar voice ElevenLabs pada akun.
+     * GET /api/tts/previews — daftar file suara sample di folder ai/voice-previews.
      */
-    public function voices(): JsonResponse
+    public function previews(): JsonResponse
     {
-        if (! filled(config('jarvis.tts.elevenlabs.api_key'))) {
-            return response()->json([
-                'success' => false,
-                'message' => 'ELEVENLABS_API_KEY belum diisi.',
-            ], 503);
+        $previewDir = base_path('../ai/voice-previews');
+        if (! is_dir($previewDir)) {
+            $previewDir = base_path('ai/voice-previews');
         }
 
-        try {
+        if (! is_dir($previewDir)) {
             return response()->json([
                 'success' => true,
-                'data' => ['voices' => $this->elevenlabs->listVoices()],
-                'active_voice_id' => config('jarvis.tts.elevenlabs.voice_id'),
+                'data' => [
+                    'directory' => 'ai/voice-previews',
+                    'files' => [],
+                ],
             ]);
-        } catch (\Throwable $e) {
-            report($e);
-
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 502);
         }
+
+        $files = scandir($previewDir);
+        $result = [];
+
+        foreach ($files as $file) {
+            if ($file === '.' || $file === '..') {
+                continue;
+            }
+            $fullPath = $previewDir.DIRECTORY_SEPARATOR.$file;
+            if (! is_file($fullPath)) {
+                continue;
+            }
+
+            $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            if (! in_array($ext, ['mp3', 'wav', 'ogg', 'm4a'])) {
+                continue;
+            }
+
+            $size = filesize($fullPath);
+            $meta = $this->parsePreviewMeta($file);
+
+            $result[] = [
+                'filename' => $file,
+                'name' => $meta['name'],
+                'voice_id' => $meta['voice_id'],
+                'group' => $meta['group'],
+                'lang' => $meta['lang'],
+                'format' => $ext,
+                'size_bytes' => $size,
+                'size_formatted' => round($size / 1024, 1).' KB',
+                'title' => $meta['title'],
+                'description' => $meta['description'],
+                'accent' => $meta['accent'],
+                'url' => '/api/tts/previews/'.$file,
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'directory' => 'ai/voice-previews',
+                'files' => $result,
+            ],
+        ]);
+    }
+
+    /**
+     * GET /api/tts/previews/{filename} — streaming audio sample dari ai/voice-previews.
+     */
+    public function streamPreview(string $filename)
+    {
+        if (! preg_match('/^[a-zA-Z0-9_\-\.]+\.(mp3|wav|ogg|m4a)$/i', $filename)) {
+            return response()->json(['success' => false, 'message' => 'Nama file tidak valid.'], 400);
+        }
+
+        $previewDir = base_path('../ai/voice-previews');
+        if (! is_dir($previewDir)) {
+            $previewDir = base_path('ai/voice-previews');
+        }
+
+        $filePath = realpath($previewDir.DIRECTORY_SEPARATOR.$filename);
+        $previewReal = realpath($previewDir);
+
+        if (! $filePath || ! $previewReal || ! str_starts_with($filePath, $previewReal) || ! is_file($filePath)) {
+            return response()->json(['success' => false, 'message' => 'File audio preview tidak ditemukan.'], 404);
+        }
+
+        $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        $mime = match ($ext) {
+            'wav' => 'audio/wav',
+            'ogg' => 'audio/ogg',
+            'm4a' => 'audio/mp4',
+            default => 'audio/mpeg',
+        };
+
+        return response()->file($filePath, [
+            'Content-Type' => $mime,
+            'Cache-Control' => 'public, max-age=86400',
+            'Accept-Ranges' => 'bytes',
+        ]);
+    }
+
+    private function parsePreviewMeta(string $filename): array
+    {
+        $base = pathinfo($filename, PATHINFO_FILENAME);
+
+        // Kasus 1: 1-Ryan-EN / 1-Ryan-ID
+        if (preg_match('/^1-Ryan-(EN|ID)$/i', $base, $m)) {
+            $lang = strtoupper($m[1]);
+            return [
+                'name' => 'Ryan',
+                'group' => 'Ryan',
+                'voice_id' => 'en-GB-RyanNeural',
+                'lang' => $lang,
+                'title' => 'Ryan · ' . ($lang === 'EN' ? 'English (JARVIS)' : 'Bahasa Indonesia'),
+                'description' => 'Pria British aksen formal, halus & berwibawa ala JARVIS Iron Man.',
+                'accent' => 'British English (en-GB)',
+            ];
+        }
+
+        // Kasus 2: 2-Thomas-EN / 2-Thomas-ID
+        if (preg_match('/^2-Thomas-(EN|ID)$/i', $base, $m)) {
+            $lang = strtoupper($m[1]);
+            return [
+                'name' => 'Thomas',
+                'group' => 'Thomas',
+                'voice_id' => 'en-GB-ThomasNeural',
+                'lang' => $lang,
+                'title' => 'Thomas · ' . ($lang === 'EN' ? 'English' : 'Bahasa Indonesia'),
+                'description' => 'Pria British nada natural, artikulasi jelas dan tenang.',
+                'accent' => 'British English (en-GB)',
+            ];
+        }
+
+        // Kasus 3: 3-Eric-EN / 3-Eric-ID
+        if (preg_match('/^3-Eric-(EN|ID)$/i', $base, $m)) {
+            $lang = strtoupper($m[1]);
+            return [
+                'name' => 'Eric',
+                'group' => 'Eric',
+                'voice_id' => 'en-US-EricNeural',
+                'lang' => $lang,
+                'title' => 'Eric · ' . ($lang === 'EN' ? 'English' : 'Bahasa Indonesia'),
+                'description' => 'Pria Amerika nada modern, energik, tegas & percaya diri.',
+                'accent' => 'US English (en-US)',
+            ];
+        }
+
+        // Kasus 4: 4-Andrew-EN / 4-Andrew-ID
+        if (preg_match('/^4-Andrew-(EN|ID)$/i', $base, $m)) {
+            $lang = strtoupper($m[1]);
+            return [
+                'name' => 'Andrew',
+                'group' => 'Andrew',
+                'voice_id' => 'en-US-AndrewNeural',
+                'lang' => $lang,
+                'title' => 'Andrew · ' . ($lang === 'EN' ? 'English' : 'Bahasa Indonesia'),
+                'description' => 'Pria Amerika bernada hangat, bersahabat dan santai.',
+                'accent' => 'US English (en-US)',
+            ];
+        }
+
+        // Kasus 5: 5-jarvis / 5-jarvis-cloned
+        if (preg_match('/^5-jarvis-cloned$/i', $base)) {
+            return [
+                'name' => 'JARVIS Cloned',
+                'group' => 'JARVIS Cloned / Master',
+                'voice_id' => 'en-GB-RyanNeural',
+                'lang' => 'EN',
+                'title' => 'JARVIS Cloned (XTTS Local AI)',
+                'description' => 'Hasil sintesis cloning AI lokal (XTTS v2 model) dari suara Paul Bettany.',
+                'accent' => 'AI Neural Clone',
+            ];
+        }
+
+        if (preg_match('/^5-jarvis$/i', $base)) {
+            return [
+                'name' => 'JARVIS Master Reference',
+                'group' => 'JARVIS Cloned / Master',
+                'voice_id' => 'en-GB-RyanNeural',
+                'lang' => 'EN',
+                'title' => 'JARVIS Master (Film Iron Man Reference)',
+                'description' => 'Sampel rekaman suara asli Paul Bettany pemeran JARVIS di film Marvel.',
+                'accent' => 'JARVIS Original Master',
+            ];
+        }
+
+        // Fallback dinamis jika ada file lain
+        return [
+            'name' => ucfirst($base),
+            'group' => 'Custom',
+            'voice_id' => 'en-GB-RyanNeural',
+            'lang' => 'EN',
+            'title' => $base,
+            'description' => 'Sampel audio preview: ' . $filename,
+            'accent' => 'Custom Audio',
+        ];
     }
 
     /**

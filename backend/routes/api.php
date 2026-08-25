@@ -21,6 +21,8 @@ use Illuminate\Support\Facades\Route;
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 Route::post('/telegram/webhook', [TelegramWebhookController::class, 'handle']);
 Route::get('/telegram/status', [TelegramWebhookController::class, 'status']);
+Route::get('/tts/previews', [TtsController::class, 'previews']);
+Route::get('/tts/previews/{filename}', [TtsController::class, 'streamPreview']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);

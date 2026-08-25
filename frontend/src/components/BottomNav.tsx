@@ -82,19 +82,19 @@ const items: NavItem[] = [
 
 export function BottomNav() {
   return (
-    <nav className="glass fixed inset-x-3 bottom-3 z-40 flex justify-between rounded-2xl px-2 py-1.5 md:hidden">
+    <nav className="glass fixed inset-x-0 bottom-0 z-50 flex justify-around border-t border-cyan-500/20 bg-jarvis-bg/90 backdrop-blur-xl px-1 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] md:hidden">
       {items.map((item) => (
         <NavLink
           key={item.to}
           to={item.to}
           end={item.to === '/'}
           className={({ isActive }) =>
-            `flex flex-1 flex-col items-center gap-1 rounded-xl py-2 text-[9px] font-semibold tracking-[0.18em] transition ${
+            `flex flex-col items-center gap-0.5 rounded-lg py-1 px-2 text-[8px] font-semibold tracking-[0.12em] transition ${
               isActive ? 'bg-jarvis-cyan/10 text-jarvis-cyan text-glow-cyan' : 'text-cyan-200/40 hover:text-cyan-100/70'
             }`
           }
         >
-          <span className="h-5 w-5">{item.icon}</span>
+          <span className="h-4 w-4">{item.icon}</span>
           {item.label}
         </NavLink>
       ))}

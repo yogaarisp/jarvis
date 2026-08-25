@@ -42,13 +42,13 @@ export function VoiceHudCenter({
   const isListening = micActive || state === 'LISTENING'
 
   return (
-    <div className="relative flex flex-col items-center justify-between h-full w-full max-w-2xl px-2 py-3">
+    <div className="relative flex flex-col items-center justify-between h-full w-full max-w-2xl px-2 py-2 sm:py-3">
       {/* Top Center: LATEST TRANSMISSION Box */}
-      <div className="hud-corner-box w-full max-w-lg rounded-xl border border-cyan-400/40 p-3 text-center shadow-[0_0_20px_rgba(0,229,255,0.12)]">
-        <div className="font-mono-tech text-[10px] font-semibold tracking-[0.3em] text-cyan-400/60 uppercase">
+      <div className="hud-corner-box w-full max-w-lg rounded-lg sm:rounded-xl border border-cyan-400/40 p-2 sm:p-3 text-center shadow-[0_0_20px_rgba(0,229,255,0.12)]">
+        <div className="font-mono-tech text-[9px] sm:text-[10px] font-semibold tracking-[0.2em] sm:tracking-[0.3em] text-cyan-400/60 uppercase">
           LATEST TRANSMISSION
         </div>
-        <div className="font-mono-tech mt-1 text-xs md:text-sm font-bold tracking-wider text-cyan-100 min-h-[1.5rem] flex items-center justify-center">
+        <div className="font-mono-tech mt-1 text-[11px] sm:text-xs md:text-sm font-bold tracking-wider text-cyan-100 min-h-[1.2rem] sm:min-h-[1.5rem] max-h-[3rem] overflow-y-auto no-scrollbar flex items-center justify-center">
           {latestTransmission ? (
             <span className={state === 'ERROR' ? 'text-rose-400 text-glow-red' : 'text-cyan-200 text-glow-cyan'}>
               {latestTransmission}
@@ -60,10 +60,10 @@ export function VoiceHudCenter({
       </div>
 
       {/* Spacer for 3D Globe in the background */}
-      <div className="flex-1 min-h-[140px] pointer-events-none" />
+      <div className="flex-1 min-h-[80px] sm:min-h-[140px] pointer-events-none" />
 
       {/* Center Bottom: Arc Reactor Voice HUD */}
-      <div className="relative flex flex-col items-center z-20 mt-auto mb-2">
+      <div className="relative flex flex-col items-center z-20 mt-auto mb-1 sm:mb-2">
         {/* Pulsing Arc Rings when listening / speaking */}
         <div className="relative flex items-center justify-center">
           {/* Animated concentric pulse rings */}
@@ -90,7 +90,7 @@ export function VoiceHudCenter({
             onTouchEnd={onTouchEndMic}
             title="Klik atau tahan untuk bicara (Lepas = Kirim)"
             aria-label="Voice Activation"
-            className={`group relative flex h-14 w-14 items-center justify-center rounded-full border-2 transition-all duration-300 ${
+            className={`group relative flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-full border-2 transition-all duration-300 ${
               isListening
                 ? 'border-rose-400 bg-rose-500/20 shadow-[0_0_25px_#f43f5e]'
                 : state === 'SPEAKING'
@@ -130,10 +130,10 @@ export function VoiceHudCenter({
         </div>
 
         {/* Listening Status Badge */}
-        <div className="mt-3">
-          <div className="font-mono-tech flex items-center gap-2 rounded-full border border-cyan-500/40 bg-cyan-950/70 px-3.5 py-1 text-[11px] font-bold tracking-[0.2em] text-cyan-300 shadow-[0_0_12px_rgba(0,229,255,0.2)]">
+        <div className="mt-2 sm:mt-3">
+          <div className="font-mono-tech flex items-center gap-1.5 sm:gap-2 rounded-full border border-cyan-500/40 bg-cyan-950/70 px-2.5 sm:px-3.5 py-1 text-[9px] sm:text-[11px] font-bold tracking-[0.15em] sm:tracking-[0.2em] text-cyan-300 shadow-[0_0_12px_rgba(0,229,255,0.2)]">
             <span
-              className={`h-2 w-2 rounded-full ${
+              className={`h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full ${
                 isListening
                   ? 'bg-rose-400 shadow-[0_0_8px_#f43f5e] animate-ping'
                   : 'bg-cyan-400 shadow-[0_0_8px_#00e5ff]'
@@ -141,10 +141,10 @@ export function VoiceHudCenter({
             />
             <span>
               {isListening
-                ? 'RECORDING AUDIO...'
+                ? 'RECORDING...'
                 : wakeRunning
-                  ? 'LISTENING FOR: "HEY JARVIS"'
-                  : 'STANDBY // VOICE DETECT READY'}
+                  ? 'LISTENING: "HEY JARVIS"'
+                  : 'STANDBY // VOICE READY'}
             </span>
           </div>
         </div>
@@ -152,22 +152,22 @@ export function VoiceHudCenter({
 
       {/* Cyber Command Prompt Input Bar */}
       <form onSubmit={onSubmit} className="w-full z-20 mt-1">
-        <div className="hud-panel flex items-center gap-2 rounded-xl p-1.5 pl-3 border border-cyan-500/40 shadow-[0_0_15px_rgba(0,229,255,0.15)]">
-          <span className="font-mono-tech text-cyan-400 font-bold text-sm tracking-widest pl-1">&gt;</span>
+        <div className="hud-panel flex items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl p-1 sm:p-1.5 pl-2 sm:pl-3 border border-cyan-500/40 shadow-[0_0_15px_rgba(0,229,255,0.15)]">
+          <span className="font-mono-tech text-cyan-400 font-bold text-xs sm:text-sm tracking-widest">&gt;</span>
           <input
             type="text"
             value={inputText}
             onChange={(e) => onInputChange(e.target.value)}
             disabled={busy}
-            placeholder="TYPE COMMAND OR VOICE PROMPT..."
-            className="font-mono-tech w-full bg-transparent py-2 text-xs md:text-sm text-cyan-100 placeholder:text-cyan-400/30 outline-none tracking-wider"
+            placeholder="TYPE COMMAND..."
+            className="font-mono-tech w-full bg-transparent py-1.5 sm:py-2 text-[11px] sm:text-xs md:text-sm text-cyan-100 placeholder:text-cyan-400/30 outline-none tracking-wider"
           />
           <button
             type="submit"
             disabled={busy || !inputText.trim()}
-            className="font-mono-tech hud-btn rounded-lg px-4 py-2 text-xs font-bold tracking-[0.2em] text-cyan-300 disabled:opacity-30 disabled:cursor-not-allowed"
+            className="font-mono-tech hud-btn rounded-md sm:rounded-lg px-2.5 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold tracking-[0.15em] sm:tracking-[0.2em] text-cyan-300 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            {busy ? 'PROCESSING' : 'EXECUTE'}
+            {busy ? '...' : 'EXEC'}
           </button>
         </div>
       </form>

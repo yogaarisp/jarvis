@@ -110,7 +110,7 @@ export function SettingsPanel({
             VOICE · STT / TTS
           </h3>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
             <label className="glass p-3 rounded-xl flex items-start gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -215,7 +215,7 @@ export function SettingsPanel({
               )
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
               <label>
                 <div className="flex items-center justify-between text-xs text-cyan-200/60">
                   <span>Kecepatan</span>
@@ -332,7 +332,7 @@ export function SettingsPanel({
               />
             </label>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
               <label className="block">
                 <span className="text-xs text-cyan-200/60 tracking-wide">Jumlah tepukan</span>
                 <select
@@ -368,7 +368,7 @@ export function SettingsPanel({
               </label>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
               <label>
                 <div className="flex items-center justify-between text-xs text-cyan-200/60">
                   <span>Jendela deteksi</span>

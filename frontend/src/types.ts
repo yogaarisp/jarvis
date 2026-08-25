@@ -106,6 +106,21 @@ export interface VoicePrefs {
   ttsServerVoice?: string
 }
 
+export interface VoicePreviewItem {
+  filename: string
+  name: string
+  voice_id: string
+  group: string
+  lang: 'EN' | 'ID' | string
+  format: string
+  size_bytes: number
+  size_formatted: string
+  title: string
+  description: string
+  accent: string
+  url: string
+}
+
 /** PRD §13 — Research agent result. */
 export interface ResearchSource {
   url: string

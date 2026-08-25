@@ -10,6 +10,7 @@ import type {
   ResearchResult,
   Skill,
   SystemTelemetry,
+  VoicePreviewItem,
   WakeSettings,
 } from '../types'
 
@@ -406,4 +407,8 @@ export async function streamMission(
       }
     }
   }
+}
+
+export function getVoicePreviews(): Promise<{ directory: string; files: VoicePreviewItem[] }> {
+  return unwrap(api.get('/tts/previews'))
 }
