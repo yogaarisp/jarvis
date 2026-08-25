@@ -10,11 +10,12 @@ export const DEFAULT_VOICE_PREFS: VoicePrefs = {
   ttsPitch: 1,
   language: 'id-ID',
   ttsEngine: 'server',
-  ttsServerVoice: 'en-GB-RyanNeural',
+  ttsServerVoice: 'jarvis-cloned',
 }
 
 /** Voice neural server (Microsoft Edge TTS) — pilihan suara neural ala JARVIS & natural. */
-export const SERVER_VOICES: Array<{ id: string; label: string; desc?: string; accent?: string }> = [
+export const SERVER_VOICES: Array<{ id: string; label: string; desc?: string; accent?: string; cloned?: boolean }> = [
+  { id: 'jarvis-cloned', label: 'JARVIS Cloned (XTTS Lokal) ★', desc: 'Suara cloning AI lokal (XTTS v2) dari referensi Paul Bettany — butuh GPU', accent: 'AI Clone', cloned: true },
   { id: 'en-GB-RyanNeural', label: 'Ryan · Pria British (JARVIS)', desc: 'British English formal & berwibawa ala JARVIS', accent: 'British' },
   { id: 'en-GB-ThomasNeural', label: 'Thomas · Pria British', desc: 'British English natural, artikulasi jernih', accent: 'British' },
   { id: 'en-US-EricNeural', label: 'Eric · Pria Amerika', desc: 'US English percaya diri & modern', accent: 'American' },
@@ -299,7 +300,16 @@ export class TtsEngine {
 
     if (this.prefs.ttsEngine !== 'browser') {
       this.speakViaServer(clean).then((ok) => {
-        if (!ok) this.speakBrowser(clean)
+        if (!ok) {
+          // Cloned voice gagal → fallback ke Edge TTS Ryan dulu, lalu browser
+          if (this.prefs.ttsServerVoice === 'jarvis-cloned') {
+            this.speakViaEdgeFallback(clean).then((ok2) => {
+              if (!ok2) this.speakBrowser(clean)
+            })
+          } else {
+            this.speakBrowser(clean)
+          }
+        }
       })
     } else {
       this.speakBrowser(clean)
@@ -310,6 +320,11 @@ export class TtsEngine {
   private async speakViaServer(text: string): Promise<boolean> {
     const token = getToken()
     if (!token) return false
+
+    // Cloned JARVIS voice — pakai XTTS lokal endpoint terpisah
+    if (this.prefs.ttsServerVoice === 'jarvis-cloned') {
+      return this.speakViaClone(text, token)
+    }
 
     const params = new URLSearchParams({ text })
     if (this.prefs.ttsServerVoice) params.set('voice', this.prefs.ttsServerVoice)
@@ -343,6 +358,84 @@ export class TtsEngine {
         this.currentAudio = null
         this.onEnd?.()
       }
+      await audio.play()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Kirim ke endpoint XTTS clone (/api/tts/clone).
+   * Fallback otomatis ke Edge TTS bila XTTS disabled/gagal.
+   */
+  private async speakViaClone(text: string, token: string): Promise<boolean> {
+    // Deteksi bahasa: id-ID → 'id' tidak didukung XTTS, maka kirim 'en'
+    const xttsLang = this.prefs.language.startsWith('id') ? 'en' : this.prefs.language.split('-')[0]
+    const params = new URLSearchParams({ text, language: xttsLang })
+
+    try {
+      const resp = await fetch(`/api/tts/clone?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      // 503 = XTTS disabled → fallback ke Edge TTS Ryan
+      if (resp.status === 503) return false
+      if (!resp.ok) return false
+      const blob = await resp.blob()
+      if (!blob.size) return false
+
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      this.currentAudio = audio
+      audio.onplay = () => {
+        this.speaking = true
+        this.onStart?.()
+      }
+      audio.onended = () => {
+        URL.revokeObjectURL(url)
+        this.speaking = false
+        this.currentAudio = null
+        this.onEnd?.()
+      }
+      audio.onerror = () => {
+        URL.revokeObjectURL(url)
+        this.speaking = false
+        this.currentAudio = null
+        this.onEnd?.()
+      }
+      await audio.play()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** Fallback: Edge TTS Ryan Neural saat XTTS clone gagal. */
+  private async speakViaEdgeFallback(text: string): Promise<boolean> {
+    const token = getToken()
+    if (!token) return false
+
+    const rate = Math.round((Math.max(0.6, Math.min(1.6, this.prefs.ttsRate)) - 1) * 100)
+    const params = new URLSearchParams({
+      text,
+      voice: 'en-GB-RyanNeural',
+      rate: `${rate >= 0 ? '+' : ''}${rate}%`,
+    })
+
+    try {
+      const resp = await fetch(`/api/tts?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!resp.ok) return false
+      const blob = await resp.blob()
+      if (!blob.size) return false
+
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      this.currentAudio = audio
+      audio.onplay = () => { this.speaking = true; this.onStart?.() }
+      audio.onended = () => { URL.revokeObjectURL(url); this.speaking = false; this.currentAudio = null; this.onEnd?.() }
+      audio.onerror = () => { URL.revokeObjectURL(url); this.speaking = false; this.currentAudio = null; this.onEnd?.() }
       await audio.play()
       return true
     } catch {

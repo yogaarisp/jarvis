@@ -32,6 +32,9 @@ export function clearToken(): void {
 
 export const api = axios.create({
   baseURL: '/api',
+  headers: {
+    Accept: 'application/json',
+  },
 })
 
 api.interceptors.request.use((config) => {
@@ -263,7 +266,6 @@ export async function streamChat(
 
     if (response.status === 401) {
       clearToken()
-      window.location.href = '/login'
     }
 
     throw new Error(message)

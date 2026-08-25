@@ -36,6 +36,16 @@ return [
         'max_chars' => 600,
         'cache_ttl' => 86400,
 
+        // XTTS Local — voice cloning offline via speak_clone.py (GPU lokal).
+        // Set XTTS_PYTHON ke path Python venv jika bukan 'python'.
+        'xtts' => [
+            'enabled' => env('XTTS_ENABLED', false),
+            'python' => env('XTTS_PYTHON', 'python'),
+            'script' => env('XTTS_SCRIPT', base_path('../ai/speak_clone.py')),
+            'ref_audio' => env('XTTS_REF_AUDIO', base_path('../ai/voice-previews/5-jarvis.mp3')),
+            'timeout' => (int) env('XTTS_TIMEOUT', 90),
+        ],
+
         // ElevenLabs — suara JARVIS hasil voice cloning / voice komunitas.
         // Model multilingual mendukung bahasa Indonesia.
         'elevenlabs' => [

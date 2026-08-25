@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\TtsController;
 use App\Http\Controllers\Api\WakeSettingController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/auth/unauthenticated', fn () => response()->json(['message' => 'Unauthenticated.'], 401))->name('login');
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 Route::post('/telegram/webhook', [TelegramWebhookController::class, 'handle']);
 Route::get('/telegram/status', [TelegramWebhookController::class, 'status']);
@@ -67,6 +68,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // PRD §7 — TTS neural server (ElevenLabs JARVIS / Edge TTS fallback).
     Route::get('/tts', [TtsController::class, 'speak']);
+    Route::get('/tts/clone', [TtsController::class, 'speakClone']);
     Route::get('/tts/voices', [TtsController::class, 'voices']);
     Route::post('/tts/clone-voice', [TtsController::class, 'cloneVoice']);
 

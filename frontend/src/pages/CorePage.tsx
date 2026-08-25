@@ -467,8 +467,8 @@ export function CorePage() {
         {/* LEFT COLUMN: System Telemetry Panels (Hidden on very small screens, visible on md+) */}
         <div className="hidden md:flex w-72 shrink-0 flex-col gap-3 z-20 overflow-y-auto">
           <ChronoSyncPanel />
-          <SysHardwarePanel />
-          <EnvTelemetryPanel />
+          {!booting && <SysHardwarePanel />}
+          {!booting && <EnvTelemetryPanel />}
         </div>
 
         {/* CENTER COLUMN: 3D Holographic Particle Globe + Voice HUD */}

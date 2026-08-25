@@ -67,6 +67,8 @@ export function SettingsPanel({
       ttsRate: 1,
       ttsPitch: 1,
       language: 'id-ID',
+      ttsEngine: 'server',
+      ttsServerVoice: 'jarvis-cloned',
       voiceName: undefined,
     }
     onChangeVoice(defaults)
@@ -180,7 +182,7 @@ export function SettingsPanel({
                   Suara JARVIS (Neural)
                 </span>
                 <select
-                  value={voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural'}
+                  value={voicePrefs.ttsServerVoice ?? 'jarvis-cloned'}
                   onChange={(e) =>
                     onChangeVoice({ ...voicePrefs, ttsServerVoice: e.target.value })
                   }
@@ -192,6 +194,13 @@ export function SettingsPanel({
                     </option>
                   ))}
                 </select>
+                {(voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned' && (
+                  <p className="mt-1.5 text-[10px] leading-relaxed text-cyan-300/50">
+                    ★ Pakai XTTS v2 lokal (GPU) · referensi{' '}
+                    <span className="text-cyan-400/70 font-mono">5-jarvis.mp3</span> ·
+                    fallback otomatis ke Ryan Neural bila GPU tidak aktif.
+                  </p>
+                )}
               </label>
             ) : (
               voices.length > 0 && (

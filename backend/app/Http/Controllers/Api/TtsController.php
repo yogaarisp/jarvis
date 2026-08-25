@@ -116,6 +116,92 @@ class TtsController extends Controller
     }
 
     /**
+     * GET /api/tts/clone — Sintesis via XTTS v2 lokal (speak_clone.py).
+     * Query params: text, language (default: en), ref (optional path override).
+     *
+     * Memerlukan XTTS_ENABLED=true dan Python venv terpasang.
+     */
+    public function speakClone(Request $request): Response|JsonResponse
+    {
+        $cfg = config('jarvis.tts.xtts');
+
+        if (! ($cfg['enabled'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'XTTS local voice clone belum diaktifkan (XTTS_ENABLED=false).',
+            ], 503);
+        }
+
+        $validated = $request->validate([
+            'text' => ['required', 'string', 'max:'.config('jarvis.tts.max_chars', 600)],
+            'language' => ['nullable', 'string', 'max:10'],
+            'rate' => ['nullable', 'regex:/^[+-]?\d{1,3}%$/'],
+        ]);
+
+        $text = trim($validated['text']);
+        if ($text === '') {
+            return response()->json(['success' => false, 'message' => 'Teks kosong.'], 422);
+        }
+
+        $language = $validated['language'] ?? 'en';
+        // Hanya bahasa yang didukung XTTS v2
+        $supported = ['en','es','fr','de','it','pt','pl','tr','ru','nl','cs','ar','zh-cn','hu','ko','ja','hi'];
+        if (! in_array($language, $supported, true)) {
+            $language = 'en';
+        }
+
+        $python = $cfg['python'];
+        $script = $cfg['script'];
+        $refAudio = $cfg['ref_audio'];
+        $timeout = (int) ($cfg['timeout'] ?? 90);
+
+        if (! file_exists($script)) {
+            return response()->json(['success' => false, 'message' => 'Script XTTS tidak ditemukan: '.$script], 500);
+        }
+        if (! file_exists($refAudio)) {
+            return response()->json(['success' => false, 'message' => 'File referensi XTTS tidak ditemukan: '.$refAudio], 500);
+        }
+
+        // Simpan output ke temp file
+        $outFile = sys_get_temp_dir().DIRECTORY_SEPARATOR.'jarvis_xtts_'.uniqid().'.wav';
+
+        $cmd = array_map('strval', [
+            $python,
+            $script,
+            $text,
+            '--language', $language,
+            '--ref', $refAudio,
+            '--save', $outFile,
+        ]);
+
+        $process = new \Symfony\Component\Process\Process($cmd);
+        $process->setTimeout($timeout);
+
+        try {
+            $process->run();
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => 'XTTS proses gagal: '.$e->getMessage()], 502);
+        }
+
+        if (! $process->isSuccessful() || ! file_exists($outFile) || filesize($outFile) === 0) {
+            $errOut = trim($process->getErrorOutput() ?: $process->getOutput());
+            @unlink($outFile);
+            return response()->json([
+                'success' => false,
+                'message' => 'XTTS synthesize gagal: '.($errOut ?: 'output kosong'),
+            ], 502);
+        }
+
+        $audio = file_get_contents($outFile);
+        @unlink($outFile);
+
+        return response((string) $audio, 200, [
+            'Content-Type' => 'audio/wav',
+            'Cache-Control' => 'private, max-age=3600',
+        ]);
+    }
+
+    /**
      * GET /api/tts/previews — daftar file suara sample di folder ai/voice-previews.
      */
     public function previews(): JsonResponse

@@ -12,9 +12,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Deploy di belakang reverse proxy (aaPanel/nginx): $request->ip()
-        // mengembalikan IP pengunjung asli dari X-Forwarded-For.
         $middleware->trustProxies(at: '*');
+        $middleware->redirectGuestsTo(fn () => route('login'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
