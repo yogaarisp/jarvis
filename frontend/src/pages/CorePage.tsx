@@ -303,6 +303,9 @@ export function CorePage() {
         { message, conversation_id: conversationId },
         {
           onMeta: (meta) => setConversationId(meta.conversation_id),
+          onStatus: (status) => {
+            if (!gotAnyDelta) setLatestTransmission(status)
+          },
           onDelta: (text) => {
             if (firstDelta) {
               firstDelta = false

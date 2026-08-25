@@ -17,6 +17,13 @@ return [
         'max_iterations' => (int) env('JARVIS_RESEARCH_MAX_ITERATIONS', 2),
     ],
 
+    // Agent chat dengan akses internet (tool-calling).
+    'agent' => [
+        'enabled' => env('JARVIS_AGENT_ENABLED', true),
+        'max_tool_rounds' => (int) env('JARVIS_AGENT_MAX_ROUNDS', 3),
+        'max_sources' => 5,
+    ],
+
     // PRD §7 — TTS neural sisi server.
     // engine: 'auto' = ElevenLabs bila key+voice tersedia, fallback Edge TTS;
     //         'elevenlabs' = paksa ElevenLabs; 'edge' = paksa Edge TTS (gratis).

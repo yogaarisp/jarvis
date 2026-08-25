@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\AI\AIProviderInterface;
 use App\AI\AIProviderManager;
+use App\Agent\AgentService;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Message;
@@ -20,6 +21,7 @@ class ChatController extends Controller
     public function __construct(
         private readonly AIProviderManager $providers,
         private readonly SkillService $skills,
+        private readonly AgentService $agent,
     ) {}
 
     public function store(Request $request): JsonResponse|StreamedResponse
@@ -62,6 +64,14 @@ class ChatController extends Controller
 
         $systemPrompt = (string) config('jarvis.system_prompt');
 
+        // Konteks waktu + kemampuan internet untuk sang agent.
+        $systemPrompt .= "\n\nWaktu sekarang: ".now()->isoFormat('dddd, D MMMM Y HH:mm').' WIB (Asia/Jakarta).';
+        if ($this->agentEnabled()) {
+            $systemPrompt .= "\nKamu memiliki akses INTERNET melalui tool web_search dan open_page. ".
+                'Untuk pertanyaan tentang fakta terkini (berita, cuaca, harga, jadwal, skor, dll) gunakan tool tersebut '.
+                'alih-alih menebak. Jawab selalu dalam bahasa Indonesia yang natural.';
+        }
+
         $providerName = $this->providers->defaultProviderName();
         $provider = $this->providers->provider();
         $modelLabel = (string) (config("ai.providers.{$providerName}.model") ?? $providerName);
@@ -100,10 +110,18 @@ class ChatController extends Controller
             $content = '';
 
             try {
-                /** @var AIProviderInterface $provider */
-                foreach ($provider->stream($history) as $delta) {
-                    $content .= $delta;
-                    $this->send('delta', ['content' => $delta]);
+                if ($this->agentEnabled() && $provider instanceof \App\AI\ToolCallingProvider) {
+                    // Mode agent: LLM memutuskan sendiri kapan perlu browsing.
+                    foreach ($this->agent->run($history, fn (string $status) => $this->send('status', ['message' => $status])) as $delta) {
+                        $content .= $delta;
+                        $this->send('delta', ['content' => $delta]);
+                    }
+                } else {
+                    /** @var AIProviderInterface $provider */
+                    foreach ($provider->stream($history) as $delta) {
+                        $content .= $delta;
+                        $this->send('delta', ['content' => $delta]);
+                    }
                 }
 
                 $assistantMessage = $conversation->messages()->create([
@@ -152,6 +170,11 @@ class ChatController extends Controller
             ob_flush();
         }
         flush();
+    }
+
+    private function agentEnabled(): bool
+    {
+        return (bool) config('jarvis.agent.enabled', true);
     }
 
     /**

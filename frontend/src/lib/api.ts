@@ -196,6 +196,8 @@ export function testHermesConnection(): Promise<ConnectionTest> {
 export interface ChatStreamHandlers {
   onMeta?: (meta: { conversation_id: number; model: string }) => void
   onDelta: (text: string) => void
+  /** Aksi agent (mis. "Mencari di internet: ...") sebelum jawaban final. */
+  onStatus?: (message: string) => void
   onDone?: (info: { message_id: number; latency_ms: number | null }) => void
   onError?: (message: string) => void
 }
@@ -294,6 +296,11 @@ export async function streamChat(
         case 'delta':
           if (typeof sse.data.content === 'string') {
             handlers.onDelta(sse.data.content)
+          }
+          break
+        case 'status':
+          if (typeof sse.data.message === 'string') {
+            handlers.onStatus?.(sse.data.message)
           }
           break
         case 'done':

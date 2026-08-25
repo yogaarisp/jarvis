@@ -1,0 +1,232 @@
+<?php
+
+namespace App\Agent;
+
+use App\AI\AIProviderManager;
+use App\AI\ToolCallingProvider;
+use App\Services\WebSearchService;
+use Generator;
+use InvalidArgumentException;
+use RuntimeException;
+use Throwable;
+
+/**
+ * Agent loop: LLM memutuskan sendiri kapan perlu mencari di internet.
+ *
+ * Alur:
+ *  1. Kirim riwayat + definisi tools (web_search, open_page) secara non-streaming.
+ *  2. Bila model meminta tool -> eksekusi, lampirkan hasil sebagai pesan `tool`, ulangi.
+ *  3. Bila model menjawab langsung -> jawaban di-yield per potongan kecil (efek ketik).
+ *  4. Bila jatah putaran habis saat masih butuh tool -> sintesis akhir via stream().
+ */
+class AgentService
+{
+    private const MAX_SNIPPET = 280;
+
+    public function __construct(
+        private readonly AIProviderManager $providers,
+        private readonly WebSearchService $web,
+    ) {}
+
+    /**
+     * @param  array<int, array<string, mixed>>  $messages  Riwayat chat (sudah termasuk system prompt).
+     * @param  (\Closure(string): void)|null  $onStatus  Dipanggil saat agent melakukan aksi (untuk UI).
+     * @return Generator<string> Potongan teks jawaban akhir.
+     */
+    public function run(array $messages, ?\Closure $onStatus = null): Generator
+    {
+        $provider = $this->providers->provider();
+
+        if (! $provider instanceof ToolCallingProvider) {
+            throw new RuntimeException('Provider AI aktif tidak mendukung tool calling.');
+        }
+
+        $maxRounds = max(1, (int) config('jarvis.agent.max_tool_rounds', 3));
+        $tools = self::tools();
+        $usedRounds = 0;
+
+        while ($usedRounds < $maxRounds) {
+            $response = $provider->completeWithTools($messages, $tools);
+
+            // Model meminta tool -> eksekusi lalu lanjutkan loop.
+            if (! empty($response['tool_calls'])) {
+                $usedRounds++;
+                $messages[] = $response['raw'];
+
+                foreach ($response['tool_calls'] as $call) {
+                    [$name, $arguments] = $this->interpretCall($call);
+
+                    if ($onStatus !== null) {
+                        $onStatus($this->statusText($name, $arguments));
+                    }
+
+                    $result = $this->executeTool($name, $arguments);
+
+                    $messages[] = [
+                        'role' => 'tool',
+                        'tool_call_id' => (string) ($call['id'] ?? ''),
+                        'content' => $result,
+                    ];
+                }
+
+                continue;
+            }
+
+            // Model menjawab langsung tanpa tool.
+            if (($response['content'] ?? null) !== null) {
+                yield from $this->chunk($response['content']);
+
+                return;
+            }
+
+            // Respon kosong total — hentikan agar tidak loop mati.
+            throw new RuntimeException('Model memberikan respon kosong.');
+        }
+
+        // Jatah riset habis — minta model merangkum temuan sekarang (streaming).
+        $messages[] = [
+            'role' => 'system',
+            'content' => 'Batas riset tercapai. Rumuskan jawaban final SEKARANG berdasarkan semua temuan di atas. Jangan lagi memanggil tool.',
+        ];
+
+        yield from $provider->stream($messages);
+    }
+
+    /** Definisi tools format OpenAI function-calling. */
+    public static function tools(): array
+    {
+        return [
+            [
+                'type' => 'function',
+                'function' => [
+                    'name' => 'web_search',
+                    'description' => 'Cari informasi terkini di internet. Gunakan untuk fakta aktual, berita, cuaca, harga, jadwal, atau hal yang mungkin berubah setelah pengetahuanmu terlatih.',
+                    'parameters' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'query' => [
+                                'type' => 'string',
+                                'description' => 'Kata kunci pencarian. Boleh bahasa Indonesia atau Inggris.',
+                            ],
+                        ],
+                        'required' => ['query'],
+                    ],
+                ],
+            ],
+            [
+                'type' => 'function',
+                'function' => [
+                    'name' => 'open_page',
+                    'description' => 'Buka URL halaman web dan ambil isi teksnya. Gunakan setelah web_search bila cuplikan tidak cukup.',
+                    'parameters' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'url' => ['type' => 'string', 'description' => 'URL lengkap dimulai http:// atau https://'],
+                        ],
+                        'required' => ['url'],
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $call
+     * @return array{0: string, 1: array<string, mixed>}
+     */
+    private function interpretCall(array $call): array
+    {
+        $name = (string) ($call['function']['name'] ?? '');
+        $arguments = [];
+
+        $rawArgs = $call['function']['arguments'] ?? [];
+
+        if (is_string($rawArgs) && $rawArgs !== '') {
+            $decoded = json_decode($rawArgs, true);
+            $arguments = is_array($decoded) ? $decoded : [];
+        } elseif (is_array($rawArgs)) {
+            $arguments = $rawArgs;
+        }
+
+        return [$name, $arguments];
+    }
+
+    /**
+     * Eksekusi satu tool call dan kembalikan hasil string untuk model.
+     *
+     * @param  array<string, mixed>  $arguments
+     */
+    private function executeTool(string $name, array $arguments): string
+    {
+        try {
+            switch ($name) {
+                case 'web_search':
+                    $results = $this->web->search(
+                        (string) ($arguments['query'] ?? ''),
+                        (int) config('jarvis.agent.max_sources', 5),
+                    );
+
+                    if ($results === []) {
+                        return json_encode(['error' => 'Tidak ada hasil ditemukan.'], JSON_UNESCAPED_UNICODE) ?: '{}';
+                    }
+
+                    foreach ($results as &$r) {
+                        $r['snippet'] = mb_substr($r['snippet'], 0, self::MAX_SNIPPET);
+                    }
+
+                    return json_encode(['results' => array_slice($results, 0, (int) config('jarvis.research.max_sources', 5))], JSON_UNESCAPED_UNICODE) ?: '{}';
+
+                case 'open_page':
+                    $page = $this->web->fetchPage((string) ($arguments['url'] ?? ''));
+
+                    return json_encode([
+                        'title' => $page['title'],
+                        'content' => $page['content'],
+                    ], JSON_UNESCAPED_UNICODE) ?: '{}';
+
+                default:
+                    throw new InvalidArgumentException("Tool [{$name}] tidak dikenal.");
+            }
+        } catch (Throwable $e) {
+            return json_encode(['error' => mb_substr($e->getMessage(), 0, 300)], JSON_UNESCAPED_UNICODE) ?: '{}';
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     */
+    private function statusText(string $name, array $arguments): string
+    {
+        return match ($name) {
+            'web_search' => 'Mencari di internet: '.mb_substr((string) ($arguments['query'] ?? ''), 0, 60),
+            'open_page' => 'Membuka halaman: '.mb_substr((string) ($arguments['url'] ?? ''), 0, 60),
+            default => "Menjalankan {$name}...",
+        };
+    }
+
+    /**
+     * Pecah teks menjadi potongan kecil agar efek streaming tetap terasa.
+     *
+     * @return Generator<string>
+     */
+    private function chunk(string $text): Generator
+    {
+        $pieces = preg_split('/(\s+)/u', $text, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [$text];
+
+        $buffer = '';
+
+        foreach ($pieces as $piece) {
+            $buffer .= $piece;
+
+            if (mb_strlen($buffer) >= 40 && trim($piece) !== '') {
+                yield $buffer;
+                $buffer = '';
+                usleep(12_000);
+            }
+        }
+
+        if ($buffer !== '') {
+            yield $buffer;
+        }
+    }
+}

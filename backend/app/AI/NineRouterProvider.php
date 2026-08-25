@@ -11,7 +11,7 @@ use RuntimeException;
  * Provider untuk 9Router (protokol kompatibel OpenAI: POST {base_url}/chat/completions).
  * API key tidak pernah keluar dari server.
  */
-class NineRouterProvider implements AIProviderInterface
+class NineRouterProvider implements AIProviderInterface, ToolCallingProvider
 {
     public function __construct(
         private readonly ?string $baseUrl,
@@ -65,6 +65,67 @@ class NineRouterProvider implements AIProviderInterface
                 $lastException = $e;
 
                 // Coba fallback model hanya jika tersedia berikutnya.
+                continue;
+            }
+        }
+
+        throw new RuntimeException('Semua model gagal: '.$lastException?->getMessage(), 0, $lastException);
+    }
+
+    public function completeWithTools(array $messages, array $tools, array $options = []): array
+    {
+        if (! $this->configured()) {
+            throw new RuntimeException(
+                '9Router belum dikonfigurasi. Lengkapi 9ROUTER_BASE_URL, 9ROUTER_API_KEY, dan 9ROUTER_MODEL.'
+            );
+        }
+
+        $models = array_values(array_filter([
+            $options['model'] ?? $this->model,
+            ($options['model'] ?? null) ? null : $this->fallbackModel,
+        ]));
+
+        $lastException = null;
+
+        foreach ($models as $model) {
+            try {
+                $response = Http::withToken((string) $this->apiKey)
+                    ->timeout($options['timeout'] ?? $this->timeout)
+                    ->connectTimeout(15)
+                    ->post(rtrim((string) $this->baseUrl, '/').'/chat/completions', [
+                        'model' => $model,
+                        'messages' => $messages,
+                        'tools' => $tools,
+                        'stream' => false,
+                        'temperature' => $options['temperature'] ?? 0.7,
+                    ]);
+
+                if ($response->failed()) {
+                    throw new RuntimeException(sprintf(
+                        'HTTP %d dari 9Router: %s',
+                        $response->status(),
+                        mb_substr($response->body(), 0, 300),
+                    ));
+                }
+
+                $message = $response->json('choices.0.message');
+
+                if (! is_array($message)) {
+                    throw new RuntimeException('Respon 9Router tidak mengandung message.');
+                }
+
+                return [
+                    'content' => isset($message['content']) && is_string($message['content']) && $message['content'] !== ''
+                        ? $message['content']
+                        : null,
+                    'tool_calls' => isset($message['tool_calls']) && is_array($message['tool_calls'])
+                        ? array_values($message['tool_calls'])
+                        : null,
+                    'raw' => $message,
+                ];
+            } catch (ConnectionException|RuntimeException $e) {
+                $lastException = $e;
+
                 continue;
             }
         }
