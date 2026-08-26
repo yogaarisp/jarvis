@@ -35,21 +35,26 @@ class SettingController extends Controller
     {
         $schema = $this->settings->schema();
 
-        // Validasi dinamis sesuai schema
+        // Validasi dinamis sesuai schema.
+        // Key schema mengandung titik (mis. "ai.default"); dalam rules Laravel titik
+        // berarti array bersarang, sehingga harus di-escape ("\.") agar divalidasi
+        // sebagai key literal dari body JSON datar yang dikirim UI.
         $rules = [];
         foreach ($schema as $key => $meta) {
+            $field = str_replace('.', '\\.', $key);
+
             switch ($meta['type']) {
                 case 'integer':
-                    $rules[$key] = ['sometimes', 'nullable', 'integer', 'min:0'];
+                    $rules[$field] = ['sometimes', 'nullable', 'integer', 'min:0'];
                     break;
                 case 'boolean':
-                    $rules[$key] = ['sometimes', 'boolean'];
+                    $rules[$field] = ['sometimes', 'boolean'];
                     break;
                 default:
                     if (str_ends_with($key, 'base_url')) {
-                        $rules[$key] = ['sometimes', 'nullable', 'url'];
+                        $rules[$field] = ['sometimes', 'nullable', 'url'];
                     } else {
-                        $rules[$key] = ['sometimes', 'nullable', 'string', 'max:2000'];
+                        $rules[$field] = ['sometimes', 'nullable', 'string', 'max:2000'];
                     }
             }
         }
