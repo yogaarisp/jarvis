@@ -143,7 +143,7 @@ export function VoiceHudCenter({
               {isListening
                 ? 'RECORDING...'
                 : wakeRunning
-                  ? 'LISTENING: "HEY JARVIS"'
+                  ? 'WAKE AKTIF // TEPUK LALU BICARA'
                   : 'STANDBY // VOICE READY'}
             </span>
           </div>

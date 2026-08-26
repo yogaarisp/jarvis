@@ -57,6 +57,7 @@ export function CorePage() {
   const wakeSettingsRef = useRef<WakeSettings>(wakeSettings)
   const busyRef = useRef(false)
   const spaceDownAt = useRef<number | null>(null)
+  const continuousDesiredRef = useRef(false)
 
   useEffect(() => {
     wakeSettingsRef.current = wakeSettings
@@ -102,29 +103,60 @@ export function CorePage() {
     }
   }, [wakeSettings.clap_enabled, wakeSettings.claps_required, wakeSettings.sensitivity, wakeSettings.window_ms, wakeSettings.cooldown_ms])
 
+  // Resume continuous STT setelah JARVIS selesai menjawab (dipanggil dari TTS onEnd).
+  const maybeResumeContinuous = useCallback(() => {
+    if (!continuousDesiredRef.current) return
+    if (!sttAvailable || !voicePrefs.sttEnabled) return
+    if (busyRef.current) return
+    window.setTimeout(() => {
+      if (continuousDesiredRef.current && !continuousSttRef.current && !busyRef.current) {
+        startContinuousStt()
+      }
+    }, 400)
+  }, [sttAvailable, voicePrefs.sttEnabled])
+
   // Bootstrap TTS engine
   useEffect(() => {
     if (!ttsAvailable) return
     const engine = new TtsEngine(voicePrefs)
     engine.onStart = () => setState((s) => (s === 'COMPLETE' || s === 'IDLE' ? 'SPEAKING' : s))
-    engine.onEnd = () => setState((s) => (s === 'SPEAKING' ? 'COMPLETE' : s))
+    engine.onEnd = () => {
+      setState((s) => (s === 'SPEAKING' ? 'COMPLETE' : s))
+      maybeResumeContinuous()
+    }
     ttsRef.current = engine
     return () => engine.cancel()
-  }, [ttsAvailable, voicePrefs])
+  }, [ttsAvailable, voicePrefs, maybeResumeContinuous])
 
-  // Initial welcome greeting — time-aware, ditampilkan & diucapkan tiap halaman dibuka/refresh
+  // Initial welcome greeting — time-aware, ditampilkan & diucapkan tiap halaman dibuka/refresh.
+  // Catatan: browser memblokir audio sebelum interaksi pertama (autoplay policy),
+  // jadi briefing suara diantrekan dan diucapkan pada klik/tekan tombol pertama.
   useEffect(() => {
     const h = new Date().getHours()
     const waktu =
       h >= 4 && h <= 10 ? 'pagi' : h >= 11 && h <= 14 ? 'siang' : h >= 15 && h <= 17 ? 'sore' : 'malam'
-    const greeting = `Selamat ${waktu}, Keenan! My Name is JARVIS, Asisten AI.`
+    const greeting = `Hai Keenan, selamat ${waktu}! I'm JARVIS.`
 
     setLatestTransmission(greeting)
     setMessages((prev) =>
       prev.length === 0 ? [{ id: Date.now(), role: 'assistant', content: greeting }] : prev,
     )
-    const t = window.setTimeout(() => ttsRef.current?.speak(greeting), 700)
-    return () => window.clearTimeout(t)
+
+    let pending = greeting
+    const speakPending = () => {
+      if (!pending) return
+      const g = pending
+      pending = ''
+      ttsRef.current?.speak(g)
+      window.removeEventListener('pointerdown', speakPending)
+      window.removeEventListener('keydown', speakPending)
+    }
+    window.addEventListener('pointerdown', speakPending)
+    window.addEventListener('keydown', speakPending)
+    return () => {
+      window.removeEventListener('pointerdown', speakPending)
+      window.removeEventListener('keydown', speakPending)
+    }
   }, [])
 
   const loadConversations = useCallback(() => {
@@ -155,6 +187,7 @@ export function CorePage() {
     }
     engine.onError = (m) => {
       setMicActive(false)
+      setLatestTransmission(`MIC: ${m}`)
       console.warn('[STT]', m)
     }
     engine.onFinal = (txt) => {
@@ -169,36 +202,58 @@ export function CorePage() {
   function startContinuousStt() {
     if (!sttAvailable || !voicePrefs.sttEnabled) return
     if (continuousSttRef.current) return
+    continuousDesiredRef.current = true
     const engine = new SttEngine(voicePrefs.language, true)
-    let buffer = ''
+    let finalCumulative = ''
+    let latestInterim = ''
     let silenceTimer: number | null = null
+
+    const armSend = () => {
+      if (silenceTimer) window.clearTimeout(silenceTimer)
+      silenceTimer = window.setTimeout(() => {
+        silenceTimer = null
+        const combined = `${finalCumulative} ${latestInterim}`.trim()
+        if (!combined || busyRef.current) return
+        // Hentikan mic dulu agar tidak merekam suara jawaban JARVIS sendiri;
+        // akan di-resume otomatis lewat maybeResumeContinuous setelah TTS selesai.
+        continuousDesiredRef.current = false
+        continuousSttRef.current = null
+        engine.cancel()
+        handleSend(combined)
+      }, 1400)
+    }
 
     engine.onStart = () => setState('LISTENING')
     engine.onInterim = (txt) => {
-      if (silenceTimer) window.clearTimeout(silenceTimer)
+      latestInterim = txt
       if (txt) {
         setLatestTransmission(txt)
-        silenceTimer = window.setTimeout(() => {
-          if (!buffer.trim() && !txt.trim()) return
-          const combined = (buffer + (buffer ? ' ' : '') + txt).trim()
-          engine.cancel()
-          if (combined) handleSend(combined)
-        }, 1200)
+        armSend()
       }
     }
     engine.onFinal = (txt) => {
-      buffer += (buffer ? ' ' : '') + txt
+      // txt bersifat kumulatif dari engine — assign, jangan append (hindari duplikat).
+      finalCumulative = txt
+      latestInterim = ''
+      armSend()
     }
     engine.onStop = () => {
       continuousSttRef.current = null
       setState((s) => (s === 'LISTENING' ? 'IDLE' : s))
     }
     engine.onError = (msg) => {
+      setLatestTransmission(`MIC: ${msg}`)
       console.warn('[continuousStt]', msg)
     }
 
     engine.start()
     continuousSttRef.current = engine
+  }
+
+  function stopContinuousStt() {
+    continuousDesiredRef.current = false
+    continuousSttRef.current?.cancel()
+    continuousSttRef.current = null
   }
 
   async function toggleWakeEngine(want: boolean) {
@@ -229,7 +284,7 @@ export function CorePage() {
   useEffect(() => {
     return () => {
       wakeRef.current?.stop()
-      continuousSttRef.current?.cancel()
+      stopContinuousStt()
       pushToTalkRef.current?.cancel()
     }
   }, [])
@@ -324,7 +379,10 @@ export function CorePage() {
             scheduleIdle(3000)
             loadConversations()
             if (voicePrefs.ttsEnabled && finalText.trim() && ttsRef.current) {
+              // Resume continuous STT ditangani TtsEngine.onEnd setelah bicara selesai.
               ttsRef.current.speak(finalText)
+            } else {
+              maybeResumeContinuous()
             }
             busyRef.current = false
           },
@@ -340,6 +398,7 @@ export function CorePage() {
             )
             setState('ERROR')
             scheduleIdle(3000)
+            maybeResumeContinuous()
             busyRef.current = false
           },
         },
@@ -356,6 +415,7 @@ export function CorePage() {
       )
       setState('ERROR')
       scheduleIdle(3000)
+      maybeResumeContinuous()
       busyRef.current = false
       if (!gotAnyDelta) finalText = ''
     }
