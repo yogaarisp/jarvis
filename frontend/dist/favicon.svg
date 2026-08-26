@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="core" cx="42%" cy="35%" r="80%">
+      <stop offset="0%" stop-color="#7df4ff"/>
+      <stop offset="45%" stop-color="#00e5ff"/>
+      <stop offset="100%" stop-color="#005f7a"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#04070f"/>
+  <circle cx="32" cy="32" r="26" fill="none" stroke="#00e5ff" stroke-opacity="0.25" stroke-width="1.5" stroke-dasharray="2.5 4.5"/>
+  <text x="32" y="32" text-anchor="middle" dominant-baseline="central" font-family="system-ui, 'Segoe UI', sans-serif" font-size="8.6" font-weight="700" letter-spacing="0.4" fill="url(#core)">J.A.R.V.I.S</text>
+</svg>

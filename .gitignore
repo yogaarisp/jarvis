@@ -16,5 +16,7 @@ Thumbs.db
 ai/venv/
 ai/.models/
 ai/clone-test.log
+ai/xtts_server.log
+ai/.cache/
 __pycache__/
 *.py[cod]
