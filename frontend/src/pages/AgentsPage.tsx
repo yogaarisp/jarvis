@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../lib/api'
+import SettingsPage from './SettingsPage'
 import type { Agent } from '../types'
 
 const PERMISSION_STYLE: Record<Agent['permission_level'], string> = {
@@ -73,6 +75,16 @@ function AgentCard({ agent }: { agent: Agent }) {
 export function AgentsPage() {
   const [agents, setAgents] = useState<Agent[] | null>(null)
   const [error, setError] = useState(false)
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const wantSettings = searchParams.get('settings') === '1'
+  // Setelah panel dibuka sekali, tetap termounting (tersembunyi) agar
+  // wake engine yang dijalankan darinya tidak mati saat panel ditutup.
+  const [settingsMounted, setSettingsMounted] = useState(false)
+
+  useEffect(() => {
+    if (wantSettings) setSettingsMounted(true)
+  }, [wantSettings])
 
   useEffect(() => {
     api
@@ -116,6 +128,13 @@ export function AgentsPage() {
           {agents.map((agent) => (
             <AgentCard key={agent.id} agent={agent} />
           ))}
+        </div>
+      )}
+
+      {/* Pengaturan Sistem — dibuka otomatis saat datang dari gear dashboard (?settings=1) */}
+      {settingsMounted && (
+        <div className={wantSettings ? 'contents' : 'hidden'}>
+          <SettingsPage onClose={() => navigate('/agents', { replace: true })} />
         </div>
       )}
     </div>

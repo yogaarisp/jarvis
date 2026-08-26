@@ -4,7 +4,7 @@ import type { JarvisState, VoicePrefs } from '../types'
 interface VoiceHudCenterProps {
   state: JarvisState
   micActive: boolean
-  wakeRunning: boolean
+  wakeRunning?: boolean
   wakeListening: boolean
   micDisabled: boolean
   voicePrefs: VoicePrefs

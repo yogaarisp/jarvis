@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, streamChat, getWakeSettings, updateWakeSettings } from '../lib/api'
+import { api, streamChat } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { HoloSphere } from '../components/HoloSphere'
 import { ChronoSyncPanel } from '../components/ChronoSyncPanel'
@@ -9,7 +9,6 @@ import { SysHardwarePanel } from '../components/SysHardwarePanel'
 import { EnvTelemetryPanel } from '../components/EnvTelemetryPanel'
 import { TerminalFeed } from '../components/TerminalFeed'
 import { VoiceHudCenter } from '../components/VoiceHudCenter'
-import SettingsPage from './SettingsPage'
 import {
   DEFAULT_VOICE_PREFS,
   SttEngine,
@@ -19,16 +18,7 @@ import {
   loadVoicePrefs,
   saveVoicePrefs,
 } from '../lib/voice'
-import { WakeEngine } from '../lib/wake'
-import type { ChatMessage, ConversationSummary, JarvisState, VoicePrefs, WakeSettings } from '../types'
-
-const DEFAULT_WAKE: WakeSettings = {
-  clap_enabled: false,
-  claps_required: 2,
-  sensitivity: 'medium',
-  window_ms: 650,
-  cooldown_ms: 2000,
-}
+import type { ChatMessage, ConversationSummary, JarvisState, VoicePrefs } from '../types'
 
 export function CorePage() {
   const { logout, booting } = useAuth()
@@ -39,30 +29,19 @@ export function CorePage() {
   const [conversationId, setConversationId] = useState<number | null>(null)
   const [, setConversations] = useState<ConversationSummary[]>([])
   const [voicePrefs, setVoicePrefs] = useState<VoicePrefs>(DEFAULT_VOICE_PREFS)
-  const [wakeSettings, setWakeSettings] = useState<WakeSettings>(DEFAULT_WAKE)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [showLogs, setShowLogs] = useState(true)
-  const [wakeRunning, setWakeRunning] = useState(false)
-  const [, setWakeError] = useState<string | null>(null)
-  const [micLevel, setMicLevel] = useState(0)
+  const [micLevel] = useState(0)
   const [micActive, setMicActive] = useState(false)
   const [inputText, setInputText] = useState('')
   const [latestTransmission, setLatestTransmission] = useState<string>('')
 
   const stateTimers = useRef<number[]>([])
   const ttsRef = useRef<TtsEngine | null>(null)
-  const wakeRef = useRef<WakeEngine | null>(null)
   const continuousSttRef = useRef<SttEngine | null>(null)
   const pushToTalkRef = useRef<SttEngine | null>(null)
-  const wakeSettingsRef = useRef<WakeSettings>(wakeSettings)
   const busyRef = useRef(false)
   const spaceDownAt = useRef<number | null>(null)
   const continuousDesiredRef = useRef(false)
-
-  useEffect(() => {
-    wakeSettingsRef.current = wakeSettings
-    if (wakeRef.current) wakeRef.current.updateSettings(wakeSettings)
-  }, [wakeSettings])
 
   const clearStateTimers = useCallback(() => {
     stateTimers.current.forEach((t) => window.clearTimeout(t))
@@ -81,13 +60,9 @@ export function CorePage() {
   const sttAvailable = useMemo(() => isSttAvailable(), [])
   const ttsAvailable = useMemo(() => isTtsAvailable(), [])
 
-  // Load persistent voice + wake settings on mount — only after auth token is ready
+  // Load persistent voice settings on mount — only after auth token is ready
   useEffect(() => {
     setVoicePrefs(loadVoicePrefs())
-    if (booting) return
-    getWakeSettings()
-      .then((s) => setWakeSettings({ ...DEFAULT_WAKE, ...s }))
-      .catch(() => undefined)
   }, [booting])
 
   // Sync voice prefs
@@ -95,13 +70,6 @@ export function CorePage() {
     saveVoicePrefs(voicePrefs)
     ttsRef.current?.updatePrefs(voicePrefs)
   }, [voicePrefs])
-
-  // Sync wake settings
-  useEffect(() => {
-    if (wakeSettings.id) {
-      updateWakeSettings(wakeSettings).catch(() => undefined)
-    }
-  }, [wakeSettings.clap_enabled, wakeSettings.claps_required, wakeSettings.sensitivity, wakeSettings.window_ms, wakeSettings.cooldown_ms])
 
   // Resume continuous STT setelah JARVIS selesai menjawab (dipanggil dari TTS onEnd).
   const maybeResumeContinuous = useCallback(() => {
@@ -256,34 +224,9 @@ export function CorePage() {
     continuousSttRef.current = null
   }
 
-  async function toggleWakeEngine(want: boolean) {
-    setWakeError(null)
-    if (want) {
-      if (!wakeRef.current) {
-        const engine = new WakeEngine(wakeSettingsRef.current)
-        engine.onWake = () => {
-          ttsRef.current?.speak(
-            voicePrefs.language.startsWith('id') ? 'Ya, Bos.' : 'Yes, Boss.',
-          )
-          setState('LISTENING')
-          startContinuousStt()
-        }
-        engine.onError = (m) => setWakeError(m)
-        engine.onLevel = (rms) => setMicLevel(rms)
-        engine.onReady = () => setWakeRunning(true)
-        engine.onStopped = () => setWakeRunning(false)
-        wakeRef.current = engine
-      }
-      await wakeRef.current.start()
-    } else {
-      wakeRef.current?.stop()
-    }
-  }
-
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      wakeRef.current?.stop()
       stopContinuousStt()
       pushToTalkRef.current?.cancel()
     }
@@ -496,10 +439,10 @@ export function CorePage() {
             </span>
           </button>
 
-          {/* Settings Button */}
+          {/* Settings Button — buka Pengaturan Sistem di halaman Agents */}
           <button
-            onClick={() => setSettingsOpen(true)}
-            title="Pengaturan JARVIS"
+            onClick={() => navigate('/agents?settings=1')}
+            title="Pengaturan Sistem (di halaman Agents)"
             className="hud-btn flex h-7 w-7 items-center justify-center rounded border border-cyan-500/40 text-cyan-300"
           >
             <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2">
@@ -542,7 +485,6 @@ export function CorePage() {
           <VoiceHudCenter
             state={state}
             micActive={micActive}
-            wakeRunning={wakeRunning}
             wakeListening={state === 'LISTENING'}
             micDisabled={micDisabled}
             voicePrefs={voicePrefs}
@@ -596,21 +538,6 @@ export function CorePage() {
           </div>
         )}
       </main>
-
-      {/* Settings Modal — satu pengaturan terpadu, wake/TTS tetap memakai mesin halaman ini */}
-      {settingsOpen && (
-        <SettingsPage
-          onClose={() => setSettingsOpen(false)}
-          voicePrefs={voicePrefs}
-          onChangeVoice={setVoicePrefs}
-          wakeSettings={wakeSettings}
-          onChangeWake={setWakeSettings}
-          wakeRunning={wakeRunning}
-          wakeError={null}
-          onToggleWake={toggleWakeEngine}
-          micLevel={micLevel}
-        />
-      )}
     </div>
   )
 }
