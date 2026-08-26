@@ -10,6 +10,7 @@ import type {
   ResearchResult,
   Skill,
   SystemTelemetry,
+  VoicePrefs,
   VoicePreviewItem,
   WakeSettings,
 } from '../types'
@@ -183,6 +184,20 @@ export function updateSettings(
   patch: Record<string, unknown>,
 ): Promise<{ saved: string[]; items: AppSettingsBundle['items'] }> {
   return unwrap(api.put('/settings', patch))
+}
+
+/** Preferensi user per-akun (voice prefs, dll) — disimpan di DB, tidak hilang saat clear cache. */
+export function getUserPreferences(): Promise<{
+  voice_prefs: VoicePrefs | null
+  updated_at: string | null
+}> {
+  return api.get('/user/preferences').then((r) => r.data)
+}
+
+export function updateUserPreferences(payload: {
+  voice_prefs: VoicePrefs
+}): Promise<{ voice_prefs: VoicePrefs | null; updated_at: string | null }> {
+  return api.put('/user/preferences', payload).then((r) => r.data)
 }
 
 export function testAiConnection(): Promise<ConnectionTest> {

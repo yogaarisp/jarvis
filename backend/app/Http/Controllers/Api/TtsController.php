@@ -28,6 +28,7 @@ class TtsController extends Controller
             'voice' => ['nullable', 'string', 'max:120'],
             'rate' => ['nullable', 'regex:/^[+-]?\d{1,3}%$/'],
             'pitch' => ['nullable', 'regex:/^[+-]?\d{1,3}Hz$/'],
+            'lang' => ['nullable', 'regex:/^[a-z]{2}(-[A-Z]{2})?$/i'],
         ]);
 
         $text = trim($validated['text']);
@@ -36,13 +37,44 @@ class TtsController extends Controller
             return response()->json(['success' => false, 'message' => 'Teks kosong.'], 422);
         }
 
-        // ---- Engine Edge TTS ----
-        $voice = $validated['voice'] ?? config('jarvis.tts.voice', 'en-GB-RyanNeural');
-        if (! preg_match('/^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$/', $voice)) {
-            $voice = config('jarvis.tts.voice', 'en-GB-RyanNeural');
+        $lang = strtolower($validated['lang'] ?? '');
+        if ($lang === '') {
+            $lang = $this->detectLang($text);
         }
-        $rate = $validated['rate'] ?? config('jarvis.tts.rate', '-4%');
-        $pitch = $validated['pitch'] ?? config('jarvis.tts.pitch', '-2Hz');
+        $isId = str_starts_with($lang, 'id');
+
+        // ---- Auto-pick native voice per bahasa (JARVIS clone / British = bagus utk Inggris, Ardi utk Indo) ----
+        $voice = $validated['voice'] ?? null;
+        $nativeVoice = $isId ? 'id-ID-ArdiNeural' : 'en-GB-RyanNeural';
+
+        // Kalau request voice tidak match bahasa (mis. user pilih jarvis-clone tapi bicara Indo → fallback ke Edge pakai native),
+        // atau format voice invalid → paksa native voice.
+        if ($voice === null || ! preg_match('/^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$/', $voice)) {
+            $voice = $nativeVoice;
+        } else {
+            $voiceLang = strtolower(substr($voice, 0, 2));
+            if ($isId && $voiceLang !== 'id') {
+                $voice = $nativeVoice;
+            } elseif (! $isId && $voiceLang === 'id') {
+                $voice = $nativeVoice;
+            }
+        }
+
+        // ---- Tuning default rate & pitch agar tidak datar/robot ----
+        //   Bahasa Indo: cenderung lebih cepat & nada lebih cerah = natural ngobrol.
+        //   Bahasa Inggris: nada tenang, kecepatan mendekati manusia normal.
+        if (isset($validated['rate'])) {
+            $rate = $validated['rate'];
+        } else {
+            $rate = $isId ? '+6%' : '-2%';
+        }
+        if (isset($validated['pitch'])) {
+            $pitch = $validated['pitch'];
+        } else {
+            $pitch = $isId ? '+8Hz' : '+4Hz';
+        }
+
+        $text = $this->naturalizeText($text, $isId ? 'id' : 'en');
 
         try {
             return $this->respondSynthesized(
@@ -55,7 +87,7 @@ class TtsController extends Controller
                 },
                 $text,
                 null,
-                "|{$rate}|{$pitch}"
+                "|{$rate}|{$pitch}|{$lang}"
             );
         } catch (\Throwable $e) {
             report($e);
@@ -429,6 +461,118 @@ class TtsController extends Controller
             'description' => 'Sampel audio preview: ' . $filename,
             'accent' => 'Custom Audio',
         ];
+    }
+
+    /**
+     * Deteksi sederhana bahasa teks (ID atau EN) berdasarkan kata umum + karakteristik huruf.
+     * Dipakai kalau query param `lang` tidak dikirim oleh client.
+     */
+    private function detectLang(string $text): string
+    {
+        $textLower = mb_strtolower($text);
+        $idHints = [
+            'yang','dengan','untuk','sudah','belum','bisa','tidak','akan','tetapi','karena',
+            'jika','maka','dari','ke','di','ini','itu','saya','kamu','kami','ada','jadi',
+            'apa','siapa','bagaimana','kapan','berapa','dong','nih','loh','ya','dong',
+            'oke','baik','siap','halo','pak','bos','bang','mas','mbak','tolong','makasih',
+            'terima','kasih','terimakasih','sekarang','nanti','besok','tadi','kemarin',
+        ];
+        $enHits = 0;
+        $idHits = 0;
+        foreach ($idHints as $w) {
+            if (str_contains($textLower, $w)) $idHits++;
+        }
+        $enHints = ['the','and','you','that','have','with','this','will','your','from','they','been','their','what','when','how','why','where','yes','okay','hello','please','thanks','thank','sir','system','ready','completed'];
+        foreach ($enHints as $w) {
+            if (str_contains($textLower, $w)) $enHits++;
+        }
+        if ($idHits > $enHits) return 'id-ID';
+        if ($enHits > $idHits) return 'en-GB';
+        $words = preg_split('/\s+/u', trim($textLower));
+        $idSuffix = 0;
+        foreach ((array) $words as $w) {
+            if (str_ends_with($w, 'nya') || str_ends_with($w, 'lah') || str_ends_with($w, 'kah') || str_ends_with($w, 'kan')) $idSuffix++;
+        }
+        return $idSuffix >= 1 ? 'id-ID' : 'en-GB';
+    }
+
+    /**
+     * Preprocess teks agar suara lebih natural — gaya bicara sehari-hari,
+     * hindari bunyi robot karena titik dua / tanda baca berlebih.
+     * Di-apply SEBELUM sintesis TTS & perhitungan hash cache.
+     */
+    private function naturalizeText(string $text, string $lang): string
+    {
+        $text = preg_replace('/\s+/u', ' ', trim($text)) ?? '';
+        if ($text === '') return '';
+
+        // Bersihkan tag/format token AI thinking: [n], <think>, dll.
+        $text = preg_replace('/\[\d+\]/u', '', $text) ?? '';
+        $text = preg_replace('/<\/?think[^>]*>/iu', ' ', $text) ?? '';
+
+        if ($lang === 'id') {
+            // Ganti kata baku / formal → gaya santai ngobrol (tidak berlebih, agar sopan).
+            $replace = [
+                'Saya telah ' => 'Saya sudah ',
+                'Saya akan ' => 'Saya bakal ',
+                ' saya telah ' => ' saya sudah ',
+                ' saya akan ' => ' saya bakal ',
+                'Anda ' => 'Keenan ',
+                ' anda ' => ' Keenan ',
+                ' Tuan.' => ' Keenan.',
+                ' Tuan, ' => ' Keenan, ',
+                'Silakan ' => 'Silakan ',
+                ' dimohon ' => ' tolong ',
+                ' mohon ' => ' tolong ',
+                ' apakah ' => ' apa ',
+                ' Apakah ' => ' Apa ',
+                'bagaimana cara ' => 'gimana cara ',
+                'Bagaimana cara ' => 'Gimana cara ',
+                'tidak dapat ' => 'gak bisa ',
+                ' tidak bisa ' => ' gak bisa ',
+                'tidak bisa ' => 'gak bisa ',
+                'Tidak bisa ' => 'Gak bisa ',
+                ' demikian ' => ' gitu ',
+                ' .' => '.',
+                ' ,' => ',',
+            ];
+            foreach ($replace as $from => $to) {
+                $text = str_replace($from, $to, $text);
+            }
+
+            // Kalau teksnya pendek (≤5 kata, sapaan / konfirmasi) sisipin nama Keenan di akhir.
+            $words = preg_split('/\s+/u', trim($text));
+            $trimmed = rtrim($text, " .,!?");
+            if (is_array($words) && count($words) <= 6 && !str_contains(mb_strtolower($text), 'keenan')) {
+                if (preg_match('/[.!?]$/u', $text, $m)) {
+                    $punct = $m[0];
+                    $text = $trimmed.", Keenan".$punct;
+                } else {
+                    $text = trim($text).", Keenan.";
+                }
+            }
+            // Tambah jeda (titik koma) sebelum konjungsi panjang agar tidak kecebutan.
+            $text = preg_replace('/(,)?\s*(tetapi|namun|padahal|sedangkan|sehingga|sampai|ketika|saat|jika|kalau|bila|setelah|sebelum|supaya|agar)\b/u', ', $2', $text) ?? $text;
+        } else {
+            // English casual: sisip Keenan name if short reply.
+            $words = preg_split('/\s+/u', trim($text));
+            $trimmed = rtrim($text, " .,!?");
+            if (is_array($words) && count($words) <= 7 && stripos($text, 'Keenan') === false && stripos($text, 'sir') === false) {
+                if (preg_match('/[.!?]$/u', $text, $m)) {
+                    $punct = $m[0];
+                    $text = $trimmed.", Keenan".$punct;
+                } else {
+                    $text = trim($text).", Keenan.";
+                }
+            }
+        }
+
+        // Cleanup double spaces & trailing koma.
+        $text = preg_replace('/\s+/u', ' ', $text) ?? '';
+        $text = preg_replace('/\s+([.,!?;:])/u', '$1', $text) ?? '';
+        $text = preg_replace('/([.,!?;:]){2,}/u', '$1', $text) ?? '';
+
+        return trim($text);
     }
 
     private function respondSynthesized(

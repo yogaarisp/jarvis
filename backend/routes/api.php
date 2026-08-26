@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\SkillController;
 use App\Http\Controllers\Api\SystemController;
 use App\Http\Controllers\Api\TelegramWebhookController;
 use App\Http\Controllers\Api\TtsController;
+use App\Http\Controllers\Api\UserPreferenceController;
 use App\Http\Controllers\Api\WakeSettingController;
 use Illuminate\Support\Facades\Route;
 
@@ -28,6 +29,9 @@ Route::get('/tts/previews/{filename}', [TtsController::class, 'streamPreview']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+
+    Route::get('/user/preferences', [UserPreferenceController::class, 'show']);
+    Route::put('/user/preferences', [UserPreferenceController::class, 'update']);
 
     Route::post('/chat', [ChatController::class, 'store']);
 

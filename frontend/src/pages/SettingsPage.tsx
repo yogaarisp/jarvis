@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   fetchAiModels,
   getSettings,
+  getUserPreferences,
   getVoicePreviews,
   getWakeSettings,
   testAiConnection,
   testHermesConnection,
   updateSettings,
+  updateUserPreferences,
   updateWakeSettings,
 } from '../lib/api'
 import type {
@@ -92,6 +94,8 @@ export default function SettingsPage({
   const [aiModelsLoading, setAiModelsLoading] = useState(false)
   const [aiModelsMsg, setAiModelsMsg] = useState<string | null>(null)
   const aiModelsAutoRef = useRef(false)
+  // Debounce save user prefs ke DB — agar tiap keystroke ttsRate tidak langsung PUT spam.
+  const voiceSaveTimerRef = useRef<number | null>(null)
   // State internal — dipakai hanya saat komponen tidak dikendalikan dari luar.
   const [intVoice, setIntVoice] = useState<VoicePrefs>(DEFAULT_VOICE_PREFS)
   const [intWake, setIntWake] = useState<WakeSettings>(DEFAULT_WAKE)
@@ -134,22 +138,42 @@ export default function SettingsPage({
     setLoading(true)
     setError(null)
     try {
-      const [b, ws] = await Promise.all([getSettings(), getWakeSettings()])
-      setBundle(b)
-      setWakeSettings({ ...DEFAULT_WAKE, ...ws })
-      setForm(() => {
-        const next: Record<string, unknown> = {}
-        for (const key in b.items) {
-          next[key] = b.items[key].secret ? '' : b.items[key].value
-        }
-        return next
-      })
+      const [b, ws, up] = await Promise.allSettled([
+        getSettings(),
+        getWakeSettings(),
+        getUserPreferences(),
+      ])
+      if (b.status === 'fulfilled') {
+        setBundle(b.value)
+        setForm(() => {
+          const next: Record<string, unknown> = {}
+          for (const key in b.value.items) {
+            next[key] = b.value.items[key].secret ? '' : b.value.items[key].value
+          }
+          return next
+        })
+      } else {
+        throw new Error('Gagal memuat pengaturan aplikasi.')
+      }
+      if (ws.status === 'fulfilled') {
+        setWakeSettings({ ...DEFAULT_WAKE, ...ws.value })
+      }
+      // Prioritaskan voice prefs dari DB (kalau ada); fallback ke localStorage.
+      // DB = source of truth — tidak hilang meskipun clear cache browser.
+      if (up.status === 'fulfilled' && up.value?.voice_prefs) {
+        const server = up.value.voice_prefs
+        const merged: VoicePrefs = { ...DEFAULT_VOICE_PREFS, ...server }
+        saveVoicePrefs(merged)
+        setVoicePrefs(merged)
+      } else {
+        setVoicePrefs(loadVoicePrefs())
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Gagal memuat pengaturan.')
+      setVoicePrefs(loadVoicePrefs())
     } finally {
       setLoading(false)
     }
-    setVoicePrefs(loadVoicePrefs())
   }, [])
 
   useEffect(() => {
@@ -161,7 +185,16 @@ export default function SettingsPage({
   }, [load, extToggle])
 
   useEffect(() => {
+    // Selalu simpan ke localStorage (sebagai cache local, cepat diakses).
     saveVoicePrefs(voicePrefs)
+
+    // Simpan ke DB server — debounce 600ms agar tidak spam request PUT setiap keystroke.
+    if (voiceSaveTimerRef.current) {
+      window.clearTimeout(voiceSaveTimerRef.current)
+    }
+    voiceSaveTimerRef.current = window.setTimeout(() => {
+      updateUserPreferences({ voice_prefs: voicePrefs }).catch(() => undefined)
+    }, 600)
   }, [voicePrefs])
 
   useEffect(() => {

@@ -68,7 +68,7 @@ export function SettingsPanel({
       ttsPitch: 1,
       language: 'id-ID',
       ttsEngine: 'server',
-      ttsServerVoice: 'en-GB-RyanNeural',
+      ttsServerVoice: 'jarvis-cloned',
       voiceName: undefined,
     }
     onChangeVoice(defaults)
@@ -182,7 +182,7 @@ export function SettingsPanel({
                   Suara JARVIS
                 </span>
                 <select
-                  value={voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural'}
+                  value={voicePrefs.ttsServerVoice ?? 'jarvis-cloned'}
                   onChange={(e) =>
                     onChangeVoice({ ...voicePrefs, ttsServerVoice: e.target.value })
                   }
@@ -195,7 +195,7 @@ export function SettingsPanel({
                   ))}
                 </select>
                 {(() => {
-                  const sel = SERVER_VOICES.find((v) => v.id === (voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural'))
+                  const sel = SERVER_VOICES.find((v) => v.id === (voicePrefs.ttsServerVoice ?? 'jarvis-cloned'))
                   return sel ? (
                     <p className="mt-1.5 text-[10px] leading-relaxed text-cyan-300/50">
                       <span className="text-cyan-400/70">{sel.accent ?? ''}</span>
