@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  fetchAiModels,
   getSettings,
   getVoicePreviews,
   getWakeSettings,
@@ -86,6 +87,11 @@ export default function SettingsPage({
   const [aiTestLoading, setAiTestLoading] = useState(false)
   const [hermesTest, setHermesTest] = useState<ConnectionTest | null>(null)
   const [hermesTestLoading, setHermesTestLoading] = useState(false)
+  // Daftar model dari gateway 9Router — untuk dropdown model utama & fallback.
+  const [aiModels, setAiModels] = useState<string[]>([])
+  const [aiModelsLoading, setAiModelsLoading] = useState(false)
+  const [aiModelsMsg, setAiModelsMsg] = useState<string | null>(null)
+  const aiModelsAutoRef = useRef(false)
   // State internal — dipakai hanya saat komponen tidak dikendalikan dari luar.
   const [intVoice, setIntVoice] = useState<VoicePrefs>(DEFAULT_VOICE_PREFS)
   const [intWake, setIntWake] = useState<WakeSettings>(DEFAULT_WAKE)
@@ -248,6 +254,9 @@ export default function SettingsPage({
       if (bundle) {
         setBundle({ ...bundle, items: res.items })
       }
+      // Key/URL baru tersimpan — muat ulang daftar model dari gateway.
+      aiModelsAutoRef.current = true
+      loadAiModels()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Gagal menyimpan.')
     } finally {
@@ -322,6 +331,54 @@ export default function SettingsPage({
     }
     return map
   }, [items])
+
+  /** Ambil daftar model dari gateway — pakai nilai form (baru) atau yang tersimpan. */
+  const loadAiModels = useCallback(async () => {
+    if (!bundle) return
+    const baseUrl =
+      String(form['ai.providers.nine_router.base_url'] ?? '').trim() ||
+      String(items['ai.providers.nine_router.base_url']?.value ?? '')
+    const typedKey = String(form['ai.providers.nine_router.api_key'] ?? '').trim()
+    const keySaved = Boolean(items['ai.providers.nine_router.api_key']?.is_filled)
+
+    if (!baseUrl || (!typedKey && !keySaved)) {
+      setAiModels([])
+      setAiModelsMsg('Isi dulu Base URL dan API Key, lalu daftar model muncul otomatis.')
+      return
+    }
+
+    setAiModelsLoading(true)
+    setAiModelsMsg(null)
+    try {
+      const res = await fetchAiModels({ base_url: baseUrl, api_key: typedKey || null })
+      if (res.ok) {
+        setAiModels(res.models)
+        setAiModelsMsg(`${res.models.length} model tersedia di gateway.`)
+      } else {
+        setAiModels([])
+        setAiModelsMsg(res.message ?? 'Gagal memuat daftar model.')
+      }
+    } catch (e) {
+      setAiModelsMsg(e instanceof Error ? e.message : 'Gagal memuat daftar model.')
+    } finally {
+      setAiModelsLoading(false)
+    }
+  }, [bundle, form, items])
+
+  // Auto-muat daftar model saat tab AI dibuka & Base URL + API Key sudah terisi.
+  useEffect(() => {
+    if (loading || !bundle || aiModelsAutoRef.current || tab !== 'ai') return
+    const keyFilled =
+      Boolean(String(form['ai.providers.nine_router.api_key'] ?? '').trim()) ||
+      Boolean(items['ai.providers.nine_router.api_key']?.is_filled)
+    const urlFilled =
+      Boolean(String(form['ai.providers.nine_router.base_url'] ?? '').trim()) ||
+      Boolean(items['ai.providers.nine_router.base_url']?.value)
+    if (keyFilled && urlFilled) {
+      aiModelsAutoRef.current = true
+      loadAiModels()
+    }
+  }, [loading, bundle, tab, form, items, loadAiModels])
 
   return (
     <div
@@ -403,8 +460,23 @@ export default function SettingsPage({
               items={itemsByGroup['ai'] ?? []}
               form={form}
               setForm={setForm}
+              modelOptions={aiModels}
             >
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-4 border-t border-slate-200 dark:border-slate-800 mt-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-3 border-t border-slate-200 dark:border-slate-800 mt-4">
+                <div className="min-w-0 flex-1 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+                  {aiModelsLoading
+                    ? 'Memuat daftar model dari gateway…'
+                    : aiModelsMsg ?? 'Daftar model dimuat otomatis saat Base URL & API Key terisi.'}
+                </div>
+                <button
+                  onClick={loadAiModels}
+                  disabled={aiModelsLoading}
+                  className="w-full sm:w-auto px-4 py-2 rounded-xl border border-cyan-500/40 text-cyan-600 dark:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 text-xs font-medium disabled:opacity-50 transition"
+                >
+                  {aiModelsLoading ? 'Memuat…' : `🔄 Muat Daftar Model${aiModels.length ? ` (${aiModels.length})` : ''}`}
+                </button>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-3">
                 <button
                   onClick={onSaveAppSettings}
                   disabled={saving}
@@ -892,12 +964,15 @@ function Section({
   items,
   form,
   setForm,
+  modelOptions = [],
   children,
 }: {
   title: string
   items: AppSettingItem[]
   form: Record<string, unknown>
   setForm: React.Dispatch<React.SetStateAction<Record<string, unknown>>>
+  /** Daftar model dari gateway — dipakai dropdown model utama & fallback. */
+  modelOptions?: string[]
   children?: React.ReactNode
 }) {
   return (
@@ -932,6 +1007,7 @@ function Section({
               <SettingField
                 item={it}
                 value={form[it.key]}
+                modelOptions={modelOptions}
                 onChange={(v) => setForm((prev) => ({ ...prev, [it.key]: v }))}
               />
             </div>
@@ -946,10 +1022,12 @@ function Section({
 function SettingField({
   item,
   value,
+  modelOptions = [],
   onChange,
 }: {
   item: AppSettingItem
   value: unknown
+  modelOptions?: string[]
   onChange: (v: unknown) => void
 }) {
   const inputBase =
@@ -979,6 +1057,38 @@ function SettingField({
       >
         <option value="local">local — offline demo responder (tanpa API key)</option>
         <option value="nine_router">nine_router — gateway OpenAI-compatible</option>
+      </select>
+    )
+  }
+  // Model utama & fallback — dropdown dari gateway kalau daftar sudah dimuat.
+  if (
+    (item.key === 'ai.providers.nine_router.model' ||
+      item.key === 'ai.providers.nine_router.fallback_model') &&
+    modelOptions.length > 0
+  ) {
+    const isFallback = item.key.endsWith('fallback_model')
+    const current = String(value ?? '')
+    const known = modelOptions.includes(current)
+
+    return (
+      <select
+        value={current}
+        onChange={(e) => onChange(e.target.value)}
+        className={inputBase}
+      >
+        <option value="">
+          {isFallback
+            ? '(kosong = tanpa fallback)'
+            : current
+              ? `${current} (tersimpan — pilih ulang)`
+              : '— pilih model utama —'}
+        </option>
+        {!known && current !== '' && <option value={current}>{current} · tersimpan</option>}
+        {modelOptions.map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
       </select>
     )
   }

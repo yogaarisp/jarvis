@@ -16,7 +16,7 @@ class NineRouterProvider implements AIProviderInterface, ToolCallingProvider
     public function __construct(
         private readonly ?string $baseUrl,
         private readonly ?string $apiKey,
-        private readonly ?string $model,
+        private readonly ?string $model = null,
         private readonly ?string $fallbackModel = null,
         private readonly int $timeout = 120,
     ) {}
@@ -201,6 +201,51 @@ class NineRouterProvider implements AIProviderInterface, ToolCallingProvider
             ?? null;
 
         return is_string($content) ? $content : null;
+    }
+
+    /**
+     * Ambil daftar model yang tersedia dari gateway (GET {base_url}/models,
+     * protokol OpenAI-compatible). Dipakai Settings UI untuk dropdown
+     * model utama & fallback.
+     *
+     * @return array<int, string> daftar model id
+     */
+    public function listModels(): array
+    {
+        if (! filled($this->baseUrl) || ! filled($this->apiKey)) {
+            throw new RuntimeException('Base URL dan API Key wajib diisi dulu.');
+        }
+
+        $response = Http::withToken((string) $this->apiKey)
+            ->timeout(20)
+            ->connectTimeout(10)
+            ->get(rtrim((string) $this->baseUrl, '/').'/models');
+
+        if ($response->failed()) {
+            throw new RuntimeException(sprintf(
+                'HTTP %d dari 9Router: %s',
+                $response->status(),
+                mb_substr($response->body(), 0, 300),
+            ));
+        }
+
+        $json = $response->json();
+
+        // Format OpenAI: { "data": [ { "id": "model-a" }, ... ] }
+        $entries = $json['data'] ?? (is_array($json) ? $json : []);
+
+        $models = [];
+        foreach ((array) $entries as $entry) {
+            $id = is_string($entry) ? $entry : ($entry['id'] ?? null);
+
+            if (is_string($id) && $id !== '' && ! in_array($id, $models, true)) {
+                $models[] = $id;
+            }
+        }
+
+        sort($models, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return $models;
     }
 
     public function testConnection(): array

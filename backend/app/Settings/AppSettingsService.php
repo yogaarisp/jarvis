@@ -57,7 +57,8 @@ class AppSettingsService
                 'secret' => false,
                 'label' => '9Router Model Utama',
                 'group' => 'ai',
-                'placeholder' => 'gpt-4o-mini',
+                'placeholder' => 'hermes · combo-sakti · gpt-4o-mini',
+                'help' => 'Nama model persis seperti di gateway. Daftar model dimuat OTOMATIS dari Base URL + API Key — pilih langsung dari dropdown (mis. ai-kee, hermes, combo-jarvis). Dipakai untuk chat utama + agent tool-calling.',
             ],
             'ai.providers.nine_router.fallback_model' => [
                 'config' => 'ai.providers.nine_router.fallback_model',
@@ -65,7 +66,8 @@ class AppSettingsService
                 'secret' => false,
                 'label' => '9Router Fallback Model',
                 'group' => 'ai',
-                'placeholder' => '(opsional) gpt-4o',
+                'placeholder' => '(opsional) hermes · combo-cepat',
+                'help' => 'Otomatis dipakai jika model utama gagal/timeout (mis. hermes sebagai fallback). Pilih dari dropdown daftar model gateway. Kosongkan jika tidak ingin fallback.',
             ],
             'ai.providers.nine_router.timeout' => [
                 'config' => 'ai.providers.nine_router.timeout',

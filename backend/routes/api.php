@@ -64,6 +64,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/settings', [SettingController::class, 'index']);
     Route::put('/settings', [SettingController::class, 'update']);
     Route::post('/settings/test-ai', [SettingController::class, 'testAi']);
+    Route::post('/settings/ai-models', [SettingController::class, 'aiModels']);
     Route::post('/settings/test-hermes', [SettingController::class, 'testHermes']);
 
     // PRD §7 — TTS neural server (Edge TTS gratis + XTTS clone lokal).

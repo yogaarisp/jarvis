@@ -193,6 +193,14 @@ export function testHermesConnection(): Promise<ConnectionTest> {
   return unwrap(api.post('/settings/test-hermes'))
 }
 
+/** Daftar model tersedia di gateway 9Router (GET {base_url}/models di sisi server). */
+export function fetchAiModels(payload?: {
+  base_url?: string | null
+  api_key?: string | null
+}): Promise<{ ok: boolean; models: string[]; message?: string }> {
+  return unwrap(api.post('/settings/ai-models', payload ?? {}))
+}
+
 /* ------------------------------------------------------------------ */
 /* SSE chat streaming                                                  */
 /* ------------------------------------------------------------------ */

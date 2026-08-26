@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { SttEngine, TtsEngine } from '../lib/voice'
+import { SERVER_VOICES, SttEngine, TtsEngine } from '../lib/voice'
 import type { VoicePrefs, WakeSettings } from '../types'
 
 interface SettingsPanelProps {
@@ -68,7 +68,7 @@ export function SettingsPanel({
       ttsPitch: 1,
       language: 'id-ID',
       ttsEngine: 'server',
-      ttsServerVoice: 'jarvis-cloned',
+      ttsServerVoice: 'en-GB-RyanNeural',
       voiceName: undefined,
     }
     onChangeVoice(defaults)
@@ -181,13 +181,28 @@ export function SettingsPanel({
                 <span className="text-xs text-cyan-200/60 tracking-wide">
                   Suara JARVIS
                 </span>
-                <div className="mt-1 w-full rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-sm text-amber-200/90">
-                  🤖 JARVIS Master (Paul Bettany) — XTTS v2 lokal
-                </div>
-                <p className="mt-1.5 text-[10px] leading-relaxed text-cyan-300/50">
-                  Referensi <span className="text-cyan-400/70 font-mono">5-jarvis.mp3</span> ·
-                  fallback otomatis ke Edge TTS bila GPU tidak aktif.
-                </p>
+                <select
+                  value={voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural'}
+                  onChange={(e) =>
+                    onChangeVoice({ ...voicePrefs, ttsServerVoice: e.target.value })
+                  }
+                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 text-sm px-3 py-2 text-cyan-50"
+                >
+                  {SERVER_VOICES.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.label}
+                    </option>
+                  ))}
+                </select>
+                {(() => {
+                  const sel = SERVER_VOICES.find((v) => v.id === (voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural'))
+                  return sel ? (
+                    <p className="mt-1.5 text-[10px] leading-relaxed text-cyan-300/50">
+                      <span className="text-cyan-400/70">{sel.accent ?? ''}</span>
+                      {sel.desc ? ` · ${sel.desc}` : ''}
+                    </p>
+                  ) : null
+                })()}
               </label>
             ) : (
               voices.length > 0 && (

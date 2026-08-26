@@ -6,8 +6,9 @@ const PREFS_KEY = 'jarvis_voice_prefs'
  * Versi skema prefs. Naikkan bila default suara berubah — prefs versi lama
  * di-migrate (suara di-reset ke default baru, preferensi lain dipertahankan).
  * v2: default suara → 'jarvis-cloned' (JARVIS Master / XTTS lokal).
+ * v3: default suara → 'en-GB-RyanNeural' (Edge Neural — production-ready di VPS).
  */
-const PREFS_VERSION = 2
+const PREFS_VERSION = 3
 
 export const DEFAULT_VOICE_PREFS: VoicePrefs = {
   sttEnabled: true,
@@ -16,13 +17,20 @@ export const DEFAULT_VOICE_PREFS: VoicePrefs = {
   ttsPitch: 1,
   language: 'id-ID',
   ttsEngine: 'server',
-  ttsServerVoice: 'jarvis-cloned',
+  ttsServerVoice: 'en-GB-RyanNeural',
 }
 
-/** Satu-satunya suara server: JARVIS Master (XTTS clone lokal, referensi Paul Bettany).
- * Fallback internal saat XTTS tidak tersedia: Edge TTS Ryan → suara browser (tidak dipilih user). */
-export const SERVER_VOICES: Array<{ id: string; label: string; desc?: string; accent?: string; cloned?: boolean }> = [
-  { id: 'jarvis-cloned', label: 'JARVIS Master (Paul Bettany) ★', desc: 'Suara asli JARVIS film Iron Man via XTTS v2 lokal (GPU)', accent: 'AI Clone', cloned: true },
+/** Pilihan suara server: Edge Neural (production-ready) + XTTS clone lokal.
+ *  Edge Neural = gratis via Microsoft, work di semua server Linux/Windows.
+ *  XTTS Clone = butuh GPU lokal + Python server (hanya lokal).
+ */
+export const SERVER_VOICES: Array<{ id: string; label: string; desc?: string; accent?: string; cloned?: boolean; engine?: 'edge' | 'xtts' }> = [
+  { id: 'en-GB-RyanNeural',   label: 'Ryan · British (JARVIS) ★', desc: 'Pria Inggris formal, halus & berwibawa ala JARVIS Iron Man (production-ready)', accent: 'British English (en-GB)', engine: 'edge' },
+  { id: 'en-GB-ThomasNeural', label: 'Thomas · British',           desc: 'Pria Inggris nada natural, artikulasi jelas dan tenang',          accent: 'British English (en-GB)', engine: 'edge' },
+  { id: 'en-US-EricNeural',   label: 'Eric · American',            desc: 'Pria Amerika modern, energik, tegas & percaya diri',             accent: 'US English (en-US)',       engine: 'edge' },
+  { id: 'en-US-AndrewNeural', label: 'Andrew · American',          desc: 'Pria Amerika bernada hangat, bersahabat dan santai',             accent: 'US English (en-US)',       engine: 'edge' },
+  { id: 'id-ID-ArdiNeural',   label: 'Ardi · Indonesia',           desc: 'Pria Indonesia artikulasi jelas, nada profesional',              accent: 'Indonesia (id-ID)',        engine: 'edge' },
+  { id: 'jarvis-cloned',      label: 'JARVIS Master (Paul Bettany) ★', desc: 'Suara asli JARVIS film via XTTS v2 lokal (butuh GPU lokal)', accent: 'AI Clone (XTTS v2)',       engine: 'xtts', cloned: true },
 ]
 
 export function loadVoicePrefs(): VoicePrefs {
@@ -299,8 +307,10 @@ export class TtsEngine {
 
   /**
    * Ucapkan teks. Bila sedang berbicara, yang lama dibatalkan.
-   * Default memakai TTS server voice clone JARVIS (XTTS v2 lokal);
-   * bila server gagal, fallback ke Edge TTS lalu speechSynthesis browser.
+   * Flow:
+   *   - Edge Neural (pilihan production): /api/tts
+   *   - XTTS Clone (lokal GPU): /api/tts/clone → fallback ke Edge TTS → browser
+   *   - Browser: speechSynthesis Web Speech API
    */
   speak(text: string): void {
     if (!this.prefs.ttsEnabled) return
@@ -310,17 +320,13 @@ export class TtsEngine {
     this.cancel()
 
     if (this.prefs.ttsEngine !== 'browser') {
-      this.speakViaServer(clean).then((ok) => {
-        if (!ok) {
-          // Cloned voice gagal → fallback ke Edge TTS Ryan dulu, lalu browser
-          if (this.prefs.ttsServerVoice === 'jarvis-cloned') {
-            this.speakViaEdgeFallback(clean).then((ok2) => {
-              if (!ok2) this.speakBrowser(clean)
-            })
-          } else {
-            this.speakBrowser(clean)
-          }
-        }
+      const isXtts = this.prefs.ttsServerVoice === 'jarvis-cloned'
+      const firstTry = isXtts
+        ? this.speakViaClone(clean, getToken() ?? '')
+            .then((ok) => ok ? true : this.speakViaEdgeFallback(clean))
+        : this.speakViaServer(clean)
+      firstTry.then((ok) => {
+        if (!ok) this.speakBrowser(clean)
       })
     } else {
       this.speakBrowser(clean)
@@ -332,15 +338,12 @@ export class TtsEngine {
     const token = getToken()
     if (!token) return false
 
-    // Cloned JARVIS voice — pakai XTTS lokal endpoint terpisah
-    if (this.prefs.ttsServerVoice === 'jarvis-cloned') {
-      return this.speakViaClone(text, token)
-    }
-
     const params = new URLSearchParams({ text })
     if (this.prefs.ttsServerVoice) params.set('voice', this.prefs.ttsServerVoice)
     const rate = Math.round((Math.max(0.6, Math.min(1.6, this.prefs.ttsRate)) - 1) * 100)
+    const pitch = Math.round((Math.max(0.6, Math.min(1.6, this.prefs.ttsPitch)) - 1) * 50)
     params.set('rate', `${rate >= 0 ? '+' : ''}${rate}%`)
+    params.set('pitch', `${pitch >= 0 ? '+' : ''}${pitch}Hz`)
 
     try {
       const resp = await fetch(`/api/tts?${params.toString()}`, {
@@ -427,10 +430,12 @@ export class TtsEngine {
     if (!token) return false
 
     const rate = Math.round((Math.max(0.6, Math.min(1.6, this.prefs.ttsRate)) - 1) * 100)
+    const pitch = Math.round((Math.max(0.6, Math.min(1.6, this.prefs.ttsPitch)) - 1) * 50)
     const params = new URLSearchParams({
       text,
       voice: 'en-GB-RyanNeural',
       rate: `${rate >= 0 ? '+' : ''}${rate}%`,
+      pitch: `${pitch >= 0 ? '+' : ''}${pitch}Hz`,
     })
 
     try {
