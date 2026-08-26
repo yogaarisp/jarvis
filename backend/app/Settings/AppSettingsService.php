@@ -39,7 +39,7 @@ class AppSettingsService
                 'secret' => false,
                 'label' => '9Router Base URL',
                 'group' => 'ai',
-                'placeholder' => 'https://api.9router.com/v1',
+                'placeholder' => 'https://9router.keetech.my.id/v1',
                 'help' => 'Endpoint base URL gateway OpenAI-compatible.',
             ],
             'ai.providers.nine_router.api_key' => [
