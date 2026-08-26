@@ -59,7 +59,30 @@ const TABS: { key: TabKey; label: string; desc: string }[] = [
   { key: 'wake', label: 'Wake Engine', desc: 'Double/triple clap wake via mic lokal.' },
 ]
 
-export default function SettingsPage({ onClose }: { onClose: () => void }) {
+interface SettingsPageProps {
+  onClose: () => void
+  /** Props kontrol opsional — diisi CorePage agar wake/TTS memakai mesin induk yang tetap hidup setelah modal ditutup. */
+  voicePrefs?: VoicePrefs
+  onChangeVoice?: (v: VoicePrefs) => void
+  wakeSettings?: WakeSettings
+  onChangeWake?: (w: WakeSettings) => void
+  wakeRunning?: boolean
+  wakeError?: string | null
+  onToggleWake?: (want: boolean) => void
+  micLevel?: number
+}
+
+export default function SettingsPage({
+  onClose,
+  voicePrefs: extVoice,
+  onChangeVoice,
+  wakeSettings: extWake,
+  onChangeWake,
+  wakeRunning: extRunning,
+  wakeError: extWakeError,
+  onToggleWake: extToggle,
+  micLevel: extMic,
+}: SettingsPageProps) {
   const [tab, setTab] = useState<TabKey>('ai')
   const [bundle, setBundle] = useState<AppSettingsBundle | null>(null)
   const [form, setForm] = useState<Record<string, unknown>>({})
@@ -71,7 +94,22 @@ export default function SettingsPage({ onClose }: { onClose: () => void }) {
   const [aiTestLoading, setAiTestLoading] = useState(false)
   const [hermesTest, setHermesTest] = useState<ConnectionTest | null>(null)
   const [hermesTestLoading, setHermesTestLoading] = useState(false)
-  const [voicePrefs, setVoicePrefs] = useState<VoicePrefs>(DEFAULT_VOICE_PREFS)
+  // State internal — dipakai hanya saat komponen tidak dikendalikan dari luar.
+  const [intVoice, setIntVoice] = useState<VoicePrefs>(DEFAULT_VOICE_PREFS)
+  const [intWake, setIntWake] = useState<WakeSettings>(DEFAULT_WAKE)
+  const [intRunning, setIntRunning] = useState(false)
+  const [intWakeError, setIntWakeError] = useState<string | null>(null)
+  const [intMic, setIntMic] = useState(0)
+
+  const voicePrefs = extVoice ?? intVoice
+  const setVoicePrefs = (v: VoicePrefs) => {
+    if (extVoice) {
+      onChangeVoice?.(v)
+      return
+    }
+    setIntVoice(v)
+  }
+
   const [voicePreviews, setVoicePreviews] = useState<VoicePreviewItem[]>([])
   const [loadingPreviews, setLoadingPreviews] = useState(false)
   const [playingFile, setPlayingFile] = useState<string | null>(null)
@@ -80,10 +118,19 @@ export default function SettingsPage({ onClose }: { onClose: () => void }) {
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([])
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const ttsEngineRef = useRef<TtsEngine | null>(null)
-  const [wakeSettings, setWakeSettings] = useState<WakeSettings>(DEFAULT_WAKE)
-  const [wakeRunning, setWakeRunning] = useState(false)
-  const [wakeError, setWakeError] = useState<string | null>(null)
-  const [micLevel, setMicLevel] = useState(0)
+
+  const wakeSettings = extWake ?? intWake
+  const setWakeSettings = (w: WakeSettings) => {
+    if (extWake) {
+      onChangeWake?.(w)
+      return
+    }
+    setIntWake(w)
+  }
+
+  const wakeRunning = extRunning ?? intRunning
+  const wakeError = extWakeError ?? intWakeError
+  const micLevel = extMic ?? intMic
   const wakeRef = useRef<WakeEngine | null>(null)
 
   const load = useCallback(async () => {
@@ -110,10 +157,11 @@ export default function SettingsPage({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     load()
+    // Hentikan engine hanya jika kita pemiliknya (mode tanpa kontrol eksternal).
     return () => {
-      wakeRef.current?.stop()
+      if (!extToggle) wakeRef.current?.stop()
     }
-  }, [load])
+  }, [load, extToggle])
 
   useEffect(() => {
     saveVoicePrefs(voicePrefs)
@@ -251,15 +299,15 @@ export default function SettingsPage({ onClose }: { onClose: () => void }) {
     }
   }
 
-  async function onToggleWake(want: boolean) {
-    setWakeError(null)
+  async function toggleWakeInternal(want: boolean) {
+    setIntWakeError(null)
     if (want) {
       if (!wakeRef.current) {
         const engine = new WakeEngine(wakeSettings)
-        engine.onError = (m) => setWakeError(m)
-        engine.onReady = () => setWakeRunning(true)
-        engine.onStopped = () => setWakeRunning(false)
-        engine.onLevel = (rms) => setMicLevel(rms)
+        engine.onError = (m) => setIntWakeError(m)
+        engine.onReady = () => setIntRunning(true)
+        engine.onStopped = () => setIntRunning(false)
+        engine.onLevel = (rms) => setIntMic(rms)
         engine.onWake = ({ claps }) => {
           console.info('[Wake]', claps, 'tepukan — OK')
         }
@@ -270,6 +318,9 @@ export default function SettingsPage({ onClose }: { onClose: () => void }) {
       wakeRef.current?.stop()
     }
   }
+
+  // Saat dikendalikan eksternal (CorePage), pakai mesin milik induk.
+  const handleToggleWake = extToggle ?? toggleWakeInternal
 
   const groups = bundle?.groups ?? {}
   const items = bundle?.items ?? {}
@@ -1168,7 +1219,7 @@ export default function SettingsPage({ onClose }: { onClose: () => void }) {
             onChangeWake={setWakeSettings}
             wakeRunning={wakeRunning}
             wakeError={wakeError}
-            onToggleWake={onToggleWake}
+            onToggleWake={handleToggleWake}
             micLevel={micLevel}
           />
         </div>

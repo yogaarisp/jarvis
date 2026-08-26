@@ -9,7 +9,7 @@ import { SysHardwarePanel } from '../components/SysHardwarePanel'
 import { EnvTelemetryPanel } from '../components/EnvTelemetryPanel'
 import { TerminalFeed } from '../components/TerminalFeed'
 import { VoiceHudCenter } from '../components/VoiceHudCenter'
-import { SettingsPanel } from '../components/SettingsPanel'
+import SettingsPage from './SettingsPage'
 import {
   DEFAULT_VOICE_PREFS,
   SttEngine,
@@ -537,19 +537,20 @@ export function CorePage() {
         )}
       </main>
 
-      {/* Settings Modal */}
-      <SettingsPanel
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        voicePrefs={voicePrefs}
-        onChangeVoice={setVoicePrefs}
-        wakeSettings={wakeSettings}
-        onChangeWake={setWakeSettings}
-        wakeRunning={wakeRunning}
-        wakeError={null}
-        onToggleWake={toggleWakeEngine}
-        micLevel={micLevel}
-      />
+      {/* Settings Modal — satu pengaturan terpadu, wake/TTS tetap memakai mesin halaman ini */}
+      {settingsOpen && (
+        <SettingsPage
+          onClose={() => setSettingsOpen(false)}
+          voicePrefs={voicePrefs}
+          onChangeVoice={setVoicePrefs}
+          wakeSettings={wakeSettings}
+          onChangeWake={setWakeSettings}
+          wakeRunning={wakeRunning}
+          wakeError={null}
+          onToggleWake={toggleWakeEngine}
+          micLevel={micLevel}
+        />
+      )}
     </div>
   )
 }
