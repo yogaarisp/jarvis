@@ -25,6 +25,20 @@ Route::get('/telegram/status', [TelegramWebhookController::class, 'status']);
 Route::get('/tts/previews', [TtsController::class, 'previews']);
 Route::get('/tts/previews/{filename}', [TtsController::class, 'streamPreview']);
 
+// DEBUG SEMENTARA — hapus setelah diagnosis
+Route::get('/debug-env', function () {
+    return response()->json([
+        'config_base_url' => config('ai.providers.nine_router.base_url'),
+        'env_fn' => env('NINE_ROUTER_BASE_URL'),
+        'repo' => \Illuminate\Support\Env::getRepository()->get('NINE_ROUTER_BASE_URL') ?? '(kosong)',
+        'env_array' => $_ENV['NINE_ROUTER_BASE_URL'] ?? '(tidak ada)',
+        'server_array' => $_SERVER['NINE_ROUTER_BASE_URL'] ?? '(tidak ada)',
+        'getenv' => getenv('NINE_ROUTER_BASE_URL') ?: '(kosong)',
+        'env_file' => app()->environmentFile(),
+        'env_exists' => file_exists(app()->environmentFile()),
+    ]);
+});
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
@@ -66,11 +80,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/settings/test-ai', [SettingController::class, 'testAi']);
     Route::post('/settings/test-hermes', [SettingController::class, 'testHermes']);
 
-    // PRD §7 — TTS neural server (ElevenLabs JARVIS / Edge TTS fallback).
+    // PRD §7 — TTS neural server (Edge TTS gratis + XTTS clone lokal).
     Route::get('/tts', [TtsController::class, 'speak']);
     Route::get('/tts/clone', [TtsController::class, 'speakClone']);
-    Route::get('/tts/voices', [TtsController::class, 'voices']);
-    Route::post('/tts/clone-voice', [TtsController::class, 'cloneVoice']);
 
     // PRD §17 — Memory: skill & memori jangka panjang JARVIS.
     Route::get('/skills', [SkillController::class, 'index']);

@@ -29,16 +29,8 @@ import {
 import { WakeEngine } from '../lib/wake'
 
 const DEFAULT_VOICE_PREVIEWS: VoicePreviewItem[] = [
-  { filename: '1-Ryan-EN.mp3', name: 'Ryan', voice_id: 'en-GB-RyanNeural', group: 'Ryan', lang: 'EN', format: 'mp3', size_bytes: 48240, size_formatted: '47.1 KB', title: 'Ryan · English (JARVIS)', description: 'Pria British aksen formal, halus & berwibawa ala JARVIS Iron Man.', accent: 'British English (en-GB)', url: '/api/tts/previews/1-Ryan-EN.mp3' },
-  { filename: '1-Ryan-ID.mp3', name: 'Ryan', voice_id: 'en-GB-RyanNeural', group: 'Ryan', lang: 'ID', format: 'mp3', size_bytes: 38160, size_formatted: '37.3 KB', title: 'Ryan · Bahasa Indonesia', description: 'Pria British aksen formal, halus & berwibawa ala JARVIS Iron Man.', accent: 'British English (en-GB)', url: '/api/tts/previews/1-Ryan-ID.mp3' },
-  { filename: '2-Thomas-EN.mp3', name: 'Thomas', voice_id: 'en-GB-ThomasNeural', group: 'Thomas', lang: 'EN', format: 'mp3', size_bytes: 46944, size_formatted: '45.8 KB', title: 'Thomas · English', description: 'Pria British nada natural, artikulasi jelas dan tenang.', accent: 'British English (en-GB)', url: '/api/tts/previews/2-Thomas-EN.mp3' },
-  { filename: '2-Thomas-ID.mp3', name: 'Thomas', voice_id: 'en-GB-ThomasNeural', group: 'Thomas', lang: 'ID', format: 'mp3', size_bytes: 36720, size_formatted: '35.9 KB', title: 'Thomas · Bahasa Indonesia', description: 'Pria British nada natural, artikulasi jelas dan tenang.', accent: 'British English (en-GB)', url: '/api/tts/previews/2-Thomas-ID.mp3' },
-  { filename: '3-Eric-EN.mp3', name: 'Eric', voice_id: 'en-US-EricNeural', group: 'Eric', lang: 'EN', format: 'mp3', size_bytes: 48528, size_formatted: '47.4 KB', title: 'Eric · English', description: 'Pria Amerika nada modern, energik, tegas & percaya diri.', accent: 'US English (en-US)', url: '/api/tts/previews/3-Eric-EN.mp3' },
-  { filename: '3-Eric-ID.mp3', name: 'Eric', voice_id: 'en-US-EricNeural', group: 'Eric', lang: 'ID', format: 'mp3', size_bytes: 39456, size_formatted: '38.5 KB', title: 'Eric · Bahasa Indonesia', description: 'Pria Amerika nada modern, energik, tegas & percaya diri.', accent: 'US English (en-US)', url: '/api/tts/previews/3-Eric-ID.mp3' },
-  { filename: '4-Andrew-EN.mp3', name: 'Andrew', voice_id: 'en-US-AndrewNeural', group: 'Andrew', lang: 'EN', format: 'mp3', size_bytes: 32256, size_formatted: '31.5 KB', title: 'Andrew · English', description: 'Pria Amerika bernada hangat, bersahabat dan santai.', accent: 'US English (en-US)', url: '/api/tts/previews/4-Andrew-EN.mp3' },
-  { filename: '4-Andrew-ID.mp3', name: 'Andrew', voice_id: 'en-US-AndrewNeural', group: 'Andrew', lang: 'ID', format: 'mp3', size_bytes: 30816, size_formatted: '30.1 KB', title: 'Andrew · Bahasa Indonesia', description: 'Pria Amerika bernada hangat, bersahabat dan santai.', accent: 'US English (en-US)', url: '/api/tts/previews/4-Andrew-ID.mp3' },
-  { filename: '5-jarvis-cloned.wav', name: 'JARVIS Cloned', voice_id: 'en-GB-RyanNeural', group: 'JARVIS Cloned / Master', lang: 'EN', format: 'wav', size_bytes: 284300, size_formatted: '277.6 KB', title: 'JARVIS Cloned (XTTS Local AI)', description: 'Hasil sintesis cloning AI lokal (XTTS v2 model) dari suara Paul Bettany.', accent: 'AI Neural Clone', url: '/api/tts/previews/5-jarvis-cloned.wav' },
-  { filename: '5-jarvis.mp3', name: 'JARVIS Master Reference', voice_id: 'en-GB-RyanNeural', group: 'JARVIS Cloned / Master', lang: 'EN', format: 'mp3', size_bytes: 163003, size_formatted: '159.2 KB', title: 'JARVIS Master (Film Iron Man Reference)', description: 'Sampel rekaman suara asli Paul Bettany pemeran JARVIS di film Marvel.', accent: 'JARVIS Original Master', url: '/api/tts/previews/5-jarvis.mp3' },
+  { filename: '5-jarvis-cloned.wav', name: 'JARVIS Cloned', voice_id: 'jarvis-cloned', group: 'JARVIS Cloned / Master', lang: 'EN', format: 'wav', size_bytes: 284300, size_formatted: '277.6 KB', title: 'JARVIS Cloned (XTTS Local AI)', description: 'Hasil sintesis cloning AI lokal (XTTS v2 model) dari suara Paul Bettany.', accent: 'AI Neural Clone', url: '/api/tts/previews/5-jarvis-cloned.wav' },
+  { filename: '5-jarvis.mp3', name: 'JARVIS Master Reference', voice_id: 'jarvis-cloned', group: 'JARVIS Cloned / Master', lang: 'EN', format: 'mp3', size_bytes: 163003, size_formatted: '159.2 KB', title: 'JARVIS Master (Film Iron Man Reference)', description: 'Sampel rekaman suara asli Paul Bettany pemeran JARVIS di film Marvel.', accent: 'JARVIS Original Master', url: '/api/tts/previews/5-jarvis.mp3' },
 ]
 
 const DEFAULT_WAKE: WakeSettings = {
@@ -115,7 +107,6 @@ export default function SettingsPage({
   const [playingFile, setPlayingFile] = useState<string | null>(null)
   const [liveTesting, setLiveTesting] = useState(false)
   const [testText, setTestText] = useState('Halo Keenan, sistem JARVIS siap dan beroperasi normal.')
-  const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([])
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const ttsEngineRef = useRef<TtsEngine | null>(null)
 
@@ -170,9 +161,6 @@ export default function SettingsPage({
   useEffect(() => {
     if (isTtsAvailable()) {
       ttsEngineRef.current = new TtsEngine(voicePrefs)
-      const refreshVoices = () => setBrowserVoices(window.speechSynthesis.getVoices())
-      refreshVoices()
-      window.speechSynthesis.onvoiceschanged = refreshVoices
     }
   }, [])
 
@@ -562,31 +550,17 @@ export default function SettingsPage({
                       Suara Aktif Saat Ini:
                     </div>
                     <div className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">
-                      {SERVER_VOICES.find((v) => v.id === (voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural'))?.label ?? voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural'}
+                      {SERVER_VOICES.find((v) => v.id === (voicePrefs.ttsServerVoice ?? 'jarvis-cloned'))?.label ?? voicePrefs.ttsServerVoice ?? 'jarvis-cloned'}
                     </div>
                   </div>
                 </div>
                 <span className="text-[10px] sm:text-[11px] px-2.5 py-1 rounded-full bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 font-mono self-start sm:self-auto shrink-0">
-                  {voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural'}
+                  {voicePrefs.ttsServerVoice ?? 'jarvis-cloned'}
                 </span>
               </div>
             ) : (
-              <div className="space-y-1.5">
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
-                  Pilih Suara Browser
-                </label>
-                <select
-                  value={voicePrefs.voiceName ?? ''}
-                  onChange={(e) => setVoicePrefs({ ...voicePrefs, voiceName: e.target.value || undefined })}
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs sm:text-sm text-slate-800 dark:text-slate-200"
-                >
-                  <option value="">— Default · Suara Pria Inggris (JARVIS) —</option>
-                  {browserVoices.map((v: SpeechSynthesisVoice) => (
-                    <option key={v.name} value={v.name}>
-                      {v.name} ({v.lang})
-                    </option>
-                  ))}
-                </select>
+              <div className="rounded-xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+                💻 Memakai suara bawaan browser — otomatis memilih voice pria Inggris ala JARVIS yang tersedia di perangkat.
               </div>
             )}
           </div>
@@ -610,328 +584,11 @@ export default function SettingsPage({
               )}
             </div>
 
-            {/* Voice Cards Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-              {/* 1. Ryan Card */}
-              <div
-                className={`rounded-2xl border transition p-3.5 sm:p-4 relative overflow-hidden flex flex-col justify-between ${
-                  (voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural') === 'en-GB-RyanNeural'
-                    ? 'border-cyan-500 ring-1 ring-cyan-500/50 bg-cyan-950/10 dark:bg-cyan-950/30'
-                    : 'border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-700'
-                }`}
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-indigo-500/10 dark:bg-indigo-500/20 flex items-center justify-center text-base sm:text-lg shrink-0">
-                        🇬🇧
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 flex-wrap">
-                          <span>Ryan</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
-                            JARVIS Core
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono truncate">
-                          en-GB-RyanNeural
-                        </div>
-                      </div>
-                    </div>
-                    {(voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural') === 'en-GB-RyanNeural' && (
-                      <span className="text-[10px] sm:text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
-                        Aktif
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-2.5 leading-relaxed">
-                    Pria British intonasi formal, halus & berwibawa khas JARVIS film Iron Man.
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-2 mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-800/60">
-                    <button
-                      type="button"
-                      onClick={() => togglePlayPreviewFile('/api/tts/previews/1-Ryan-EN.mp3', '1-Ryan-EN.mp3')}
-                      className={`w-full text-xs py-2 px-2 rounded-xl border flex items-center justify-center gap-1.5 font-medium transition ${
-                        playingFile === '1-Ryan-EN.mp3'
-                          ? 'bg-amber-500 text-white border-amber-500 shadow-sm animate-pulse'
-                          : 'border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      {playingFile === '1-Ryan-EN.mp3' ? '⏹ Stop' : '▶ EN Sample'}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => togglePlayPreviewFile('/api/tts/previews/1-Ryan-ID.mp3', '1-Ryan-ID.mp3')}
-                      className={`w-full text-xs py-2 px-2 rounded-xl border flex items-center justify-center gap-1.5 font-medium transition ${
-                        playingFile === '1-Ryan-ID.mp3'
-                          ? 'bg-amber-500 text-white border-amber-500 shadow-sm animate-pulse'
-                          : 'border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      {playingFile === '1-Ryan-ID.mp3' ? '⏹ Stop' : '▶ ID Sample'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={() => setVoicePrefs({ ...voicePrefs, ttsServerVoice: 'en-GB-RyanNeural', ttsEngine: 'server' })}
-                    disabled={(voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural') === 'en-GB-RyanNeural' && voicePrefs.ttsEngine === 'server'}
-                    className="w-full py-2.5 px-3 rounded-xl text-xs font-semibold bg-slate-900 dark:bg-slate-800 text-white hover:bg-cyan-600 dark:hover:bg-cyan-600 disabled:opacity-40 disabled:hover:bg-slate-900 transition flex items-center justify-center gap-1.5 shadow-sm"
-                  >
-                    {(voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural') === 'en-GB-RyanNeural' && voicePrefs.ttsEngine === 'server'
-                      ? '✓ Suara Terpilih'
-                      : 'Pilih Suara Ryan'}
-                  </button>
-                </div>
-              </div>
-
-              {/* 2. Thomas Card */}
-              <div
-                className={`rounded-2xl border transition p-3.5 sm:p-4 relative overflow-hidden flex flex-col justify-between ${
-                  voicePrefs.ttsServerVoice === 'en-GB-ThomasNeural'
-                    ? 'border-cyan-500 ring-1 ring-cyan-500/50 bg-cyan-950/10 dark:bg-cyan-950/30'
-                    : 'border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-700'
-                }`}
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-blue-500/10 dark:bg-blue-500/20 flex items-center justify-center text-base sm:text-lg shrink-0">
-                        🇬🇧
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 flex-wrap">
-                          <span>Thomas</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                            British Natural
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono truncate">
-                          en-GB-ThomasNeural
-                        </div>
-                      </div>
-                    </div>
-                    {voicePrefs.ttsServerVoice === 'en-GB-ThomasNeural' && (
-                      <span className="text-[10px] sm:text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
-                        Aktif
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-2.5 leading-relaxed">
-                    Pria British artikulasi jernih, nada bersahaja, dan artikulasi santun.
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-2 mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-800/60">
-                    <button
-                      type="button"
-                      onClick={() => togglePlayPreviewFile('/api/tts/previews/2-Thomas-EN.mp3', '2-Thomas-EN.mp3')}
-                      className={`w-full text-xs py-2 px-2 rounded-xl border flex items-center justify-center gap-1.5 font-medium transition ${
-                        playingFile === '2-Thomas-EN.mp3'
-                          ? 'bg-amber-500 text-white border-amber-500 shadow-sm animate-pulse'
-                          : 'border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      {playingFile === '2-Thomas-EN.mp3' ? '⏹ Stop' : '▶ EN Sample'}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => togglePlayPreviewFile('/api/tts/previews/2-Thomas-ID.mp3', '2-Thomas-ID.mp3')}
-                      className={`w-full text-xs py-2 px-2 rounded-xl border flex items-center justify-center gap-1.5 font-medium transition ${
-                        playingFile === '2-Thomas-ID.mp3'
-                          ? 'bg-amber-500 text-white border-amber-500 shadow-sm animate-pulse'
-                          : 'border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      {playingFile === '2-Thomas-ID.mp3' ? '⏹ Stop' : '▶ ID Sample'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={() => setVoicePrefs({ ...voicePrefs, ttsServerVoice: 'en-GB-ThomasNeural', ttsEngine: 'server' })}
-                    disabled={voicePrefs.ttsServerVoice === 'en-GB-ThomasNeural' && voicePrefs.ttsEngine === 'server'}
-                    className="w-full py-2.5 px-3 rounded-xl text-xs font-semibold bg-slate-900 dark:bg-slate-800 text-white hover:bg-cyan-600 dark:hover:bg-cyan-600 disabled:opacity-40 disabled:hover:bg-slate-900 transition flex items-center justify-center gap-1.5 shadow-sm"
-                  >
-                    {voicePrefs.ttsServerVoice === 'en-GB-ThomasNeural' && voicePrefs.ttsEngine === 'server'
-                      ? '✓ Suara Terpilih'
-                      : 'Pilih Suara Thomas'}
-                  </button>
-                </div>
-              </div>
-
-              {/* 3. Eric Card */}
-              <div
-                className={`rounded-2xl border transition p-3.5 sm:p-4 relative overflow-hidden flex flex-col justify-between ${
-                  voicePrefs.ttsServerVoice === 'en-US-EricNeural'
-                    ? 'border-cyan-500 ring-1 ring-cyan-500/50 bg-cyan-950/10 dark:bg-cyan-950/30'
-                    : 'border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-700'
-                }`}
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 flex items-center justify-center text-base sm:text-lg shrink-0">
-                        🇺🇸
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 flex-wrap">
-                          <span>Eric</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                            US Confident
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono truncate">
-                          en-US-EricNeural
-                        </div>
-                      </div>
-                    </div>
-                    {voicePrefs.ttsServerVoice === 'en-US-EricNeural' && (
-                      <span className="text-[10px] sm:text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
-                        Aktif
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-2.5 leading-relaxed">
-                    Pria Amerika bernada modern, energik, tegas & percaya diri.
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-2 mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-800/60">
-                    <button
-                      type="button"
-                      onClick={() => togglePlayPreviewFile('/api/tts/previews/3-Eric-EN.mp3', '3-Eric-EN.mp3')}
-                      className={`w-full text-xs py-2 px-2 rounded-xl border flex items-center justify-center gap-1.5 font-medium transition ${
-                        playingFile === '3-Eric-EN.mp3'
-                          ? 'bg-amber-500 text-white border-amber-500 shadow-sm animate-pulse'
-                          : 'border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      {playingFile === '3-Eric-EN.mp3' ? '⏹ Stop' : '▶ EN Sample'}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => togglePlayPreviewFile('/api/tts/previews/3-Eric-ID.mp3', '3-Eric-ID.mp3')}
-                      className={`w-full text-xs py-2 px-2 rounded-xl border flex items-center justify-center gap-1.5 font-medium transition ${
-                        playingFile === '3-Eric-ID.mp3'
-                          ? 'bg-amber-500 text-white border-amber-500 shadow-sm animate-pulse'
-                          : 'border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      {playingFile === '3-Eric-ID.mp3' ? '⏹ Stop' : '▶ ID Sample'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={() => setVoicePrefs({ ...voicePrefs, ttsServerVoice: 'en-US-EricNeural', ttsEngine: 'server' })}
-                    disabled={voicePrefs.ttsServerVoice === 'en-US-EricNeural' && voicePrefs.ttsEngine === 'server'}
-                    className="w-full py-2.5 px-3 rounded-xl text-xs font-semibold bg-slate-900 dark:bg-slate-800 text-white hover:bg-cyan-600 dark:hover:bg-cyan-600 disabled:opacity-40 disabled:hover:bg-slate-900 transition flex items-center justify-center gap-1.5 shadow-sm"
-                  >
-                    {voicePrefs.ttsServerVoice === 'en-US-EricNeural' && voicePrefs.ttsEngine === 'server'
-                      ? '✓ Suara Terpilih'
-                      : 'Pilih Suara Eric'}
-                  </button>
-                </div>
-              </div>
-
-              {/* 4. Andrew Card */}
-              <div
-                className={`rounded-2xl border transition p-3.5 sm:p-4 relative overflow-hidden flex flex-col justify-between ${
-                  voicePrefs.ttsServerVoice === 'en-US-AndrewNeural'
-                    ? 'border-cyan-500 ring-1 ring-cyan-500/50 bg-cyan-950/10 dark:bg-cyan-950/30'
-                    : 'border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-700'
-                }`}
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-purple-500/10 dark:bg-purple-500/20 flex items-center justify-center text-base sm:text-lg shrink-0">
-                        🇺🇸
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 flex-wrap">
-                          <span>Andrew</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-                            US Warm
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono truncate">
-                          en-US-AndrewNeural
-                        </div>
-                      </div>
-                    </div>
-                    {voicePrefs.ttsServerVoice === 'en-US-AndrewNeural' && (
-                      <span className="text-[10px] sm:text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
-                        Aktif
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-2.5 leading-relaxed">
-                    Pria Amerika bernada hangat, ramah dan santai cocok untuk asisten harian.
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-2 mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-800/60">
-                    <button
-                      type="button"
-                      onClick={() => togglePlayPreviewFile('/api/tts/previews/4-Andrew-EN.mp3', '4-Andrew-EN.mp3')}
-                      className={`w-full text-xs py-2 px-2 rounded-xl border flex items-center justify-center gap-1.5 font-medium transition ${
-                        playingFile === '4-Andrew-EN.mp3'
-                          ? 'bg-amber-500 text-white border-amber-500 shadow-sm animate-pulse'
-                          : 'border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      {playingFile === '4-Andrew-EN.mp3' ? '⏹ Stop' : '▶ EN Sample'}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => togglePlayPreviewFile('/api/tts/previews/4-Andrew-ID.mp3', '4-Andrew-ID.mp3')}
-                      className={`w-full text-xs py-2 px-2 rounded-xl border flex items-center justify-center gap-1.5 font-medium transition ${
-                        playingFile === '4-Andrew-ID.mp3'
-                          ? 'bg-amber-500 text-white border-amber-500 shadow-sm animate-pulse'
-                          : 'border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      {playingFile === '4-Andrew-ID.mp3' ? '⏹ Stop' : '▶ ID Sample'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={() => setVoicePrefs({ ...voicePrefs, ttsServerVoice: 'en-US-AndrewNeural', ttsEngine: 'server' })}
-                    disabled={voicePrefs.ttsServerVoice === 'en-US-AndrewNeural' && voicePrefs.ttsEngine === 'server'}
-                    className="w-full py-2.5 px-3 rounded-xl text-xs font-semibold bg-slate-900 dark:bg-slate-800 text-white hover:bg-cyan-600 dark:hover:bg-cyan-600 disabled:opacity-40 disabled:hover:bg-slate-900 transition flex items-center justify-center gap-1.5 shadow-sm"
-                  >
-                    {voicePrefs.ttsServerVoice === 'en-US-AndrewNeural' && voicePrefs.ttsEngine === 'server'
-                      ? '✓ Suara Terpilih'
-                      : 'Pilih Suara Andrew'}
-                  </button>
-                </div>
-              </div>
-            </div>
+            {/* Pilihan suara neural lain dihapus — hanya JARVIS Master */}
 
             {/* 5. JARVIS Master & Cloned Feature Card */}
             <div className={`rounded-2xl border transition p-3.5 sm:p-5 relative overflow-hidden ${
-              (voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural') === 'en-GB-RyanNeural' && voicePrefs.ttsEngine === 'server'
+              (voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned' && (voicePrefs.ttsEngine ?? 'server') === 'server'
                 ? 'border-amber-500/60 ring-1 ring-amber-500/40 bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-amber-950/20 shadow-md shadow-amber-500/5'
                 : 'border-amber-500/30 bg-gradient-to-r from-amber-500/5 via-amber-500/10 to-transparent'
             }`}>
@@ -946,7 +603,7 @@ export default function SettingsPage({
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 font-mono font-bold">
                         Paul Bettany · Default
                       </span>
-                      {(voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural') === 'en-GB-RyanNeural' && voicePrefs.ttsEngine === 'server' && (
+                      {(voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned' && (voicePrefs.ttsEngine ?? 'server') === 'server' && (
                         <span className="text-[10px] sm:text-[11px] font-semibold text-amber-500 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
                           Default Aktif
@@ -988,17 +645,17 @@ export default function SettingsPage({
 
               <div className="mt-3 pt-3 border-t border-amber-500/20 flex flex-col sm:flex-row items-center justify-between gap-2">
                 <span className="text-[11px] text-amber-700/80 dark:text-amber-300/80 font-medium text-center sm:text-left">
-                  Suara model AI: <span className="font-mono font-bold">en-GB-RyanNeural</span> (Aksen Paul Bettany JARVIS)
+                  Suara model AI: <span className="font-mono font-bold">jarvis-cloned</span> · XTTS v2 lokal (referensi Paul Bettany JARVIS)
                 </span>
                 <button
                   type="button"
-                  onClick={() => setVoicePrefs({ ...voicePrefs, ttsServerVoice: 'en-GB-RyanNeural', ttsEngine: 'server' })}
-                  disabled={(voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural') === 'en-GB-RyanNeural' && voicePrefs.ttsEngine === 'server'}
+                  onClick={() => setVoicePrefs({ ...voicePrefs, ttsServerVoice: 'jarvis-cloned', ttsEngine: 'server' })}
+                  disabled={(voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned' && (voicePrefs.ttsEngine ?? 'server') === 'server'}
                   className="w-full sm:w-auto px-4 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:opacity-50 disabled:hover:bg-amber-500 transition shadow-sm"
                 >
-                  {(voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural') === 'en-GB-RyanNeural' && voicePrefs.ttsEngine === 'server'
+                  {(voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned' && (voicePrefs.ttsEngine ?? 'server') === 'server'
                     ? '✓ Suara JARVIS Master Aktif'
-                    : 'Gunakan 5-jarvis.mp3 Sebagai Default'}
+                    : 'Aktifkan Suara JARVIS Master'}
                 </button>
               </div>
             </div>
@@ -1068,12 +725,12 @@ export default function SettingsPage({
                           type="button"
                           onClick={() => setVoicePrefs({ ...voicePrefs, ttsServerVoice: f.voice_id, ttsEngine: 'server' })}
                           className={`text-[11px] px-2.5 py-1 rounded-lg border transition font-medium ${
-                            (voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural') === f.voice_id && voicePrefs.ttsEngine === 'server'
+                            (voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === f.voice_id && voicePrefs.ttsEngine === 'server'
                               ? 'bg-cyan-500 text-white border-cyan-500 font-semibold'
                               : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-cyan-400'
                           }`}
                         >
-                          {(voicePrefs.ttsServerVoice ?? 'en-GB-RyanNeural') === f.voice_id && voicePrefs.ttsEngine === 'server'
+                          {(voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === f.voice_id && voicePrefs.ttsEngine === 'server'
                             ? '✓ Aktif'
                             : 'Gunakan'}
                         </button>

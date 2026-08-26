@@ -27,7 +27,7 @@ class LocalProvider implements AIProviderInterface
         $reply = sprintf(
             '[MODE LOKAL] Perintah diterima: "%s". '
             .'Provider 9Router belum dikonfigurasi — set AI_PROVIDER=nine_router '
-            .'beserta 9ROUTER_BASE_URL, 9ROUTER_API_KEY, dan 9ROUTER_MODEL di file .env '
+            .'beserta NINE_ROUTER_BASE_URL, NINE_ROUTER_API_KEY, dan NINE_ROUTER_MODEL di file .env '
             .'untuk mengaktifkan model AI sesungguhnya.',
             mb_substr($lastUser, 0, 120),
         );

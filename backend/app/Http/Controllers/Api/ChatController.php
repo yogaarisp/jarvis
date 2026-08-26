@@ -70,6 +70,10 @@ class ChatController extends Controller
             $systemPrompt .= "\nKamu memiliki akses INTERNET melalui tool web_search dan open_page. ".
                 'Untuk pertanyaan tentang fakta terkini (berita, cuaca, harga, jadwal, skor, dll) gunakan tool tersebut '.
                 'alih-alih menebak. Jawab selalu dalam bahasa Indonesia yang natural.';
+            $systemPrompt .= "\nKamu juga bisa MENGENDALIKAN PC Keenan lewat tool system_control: buka situs/aplikasi ".
+                '(buka YouTube → open_url youtube; buka WhatsApp → open_app whatsapp) atau tutup aplikasi '.
+                '(tutup Chrome → close_app chrome). Panggil tool-nya langsung saat diminta — jangan cuma memberi tahu caranya. '.
+                'Aksi hanya bekerja saat JARVIS berjalan lokal di PC Keenan.';
         }
 
         $providerName = $this->providers->defaultProviderName();

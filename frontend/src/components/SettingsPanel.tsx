@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { SERVER_VOICES, SttEngine, TtsEngine } from '../lib/voice'
+import { SttEngine, TtsEngine } from '../lib/voice'
 import type { VoicePrefs, WakeSettings } from '../types'
 
 interface SettingsPanelProps {
@@ -179,28 +179,15 @@ export function SettingsPanel({
             {(voicePrefs.ttsEngine ?? 'server') === 'server' ? (
               <label className="block">
                 <span className="text-xs text-cyan-200/60 tracking-wide">
-                  Suara JARVIS (Neural)
+                  Suara JARVIS
                 </span>
-                <select
-                  value={voicePrefs.ttsServerVoice ?? 'jarvis-cloned'}
-                  onChange={(e) =>
-                    onChangeVoice({ ...voicePrefs, ttsServerVoice: e.target.value })
-                  }
-                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 text-sm px-3 py-2 text-cyan-50"
-                >
-                  {SERVER_VOICES.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.label}
-                    </option>
-                  ))}
-                </select>
-                {(voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned' && (
-                  <p className="mt-1.5 text-[10px] leading-relaxed text-cyan-300/50">
-                    ★ Pakai XTTS v2 lokal (GPU) · referensi{' '}
-                    <span className="text-cyan-400/70 font-mono">5-jarvis.mp3</span> ·
-                    fallback otomatis ke Ryan Neural bila GPU tidak aktif.
-                  </p>
-                )}
+                <div className="mt-1 w-full rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-sm text-amber-200/90">
+                  🤖 JARVIS Master (Paul Bettany) — XTTS v2 lokal
+                </div>
+                <p className="mt-1.5 text-[10px] leading-relaxed text-cyan-300/50">
+                  Referensi <span className="text-cyan-400/70 font-mono">5-jarvis.mp3</span> ·
+                  fallback otomatis ke Edge TTS bila GPU tidak aktif.
+                </p>
               </label>
             ) : (
               voices.length > 0 && (

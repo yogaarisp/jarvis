@@ -27,8 +27,8 @@ return [
     ],
 
     // PRD §7 — TTS neural sisi server.
-    // engine: 'auto' = ElevenLabs bila key+voice tersedia, fallback Edge TTS;
-    //         'elevenlabs' = paksa ElevenLabs; 'edge' = paksa Edge TTS (gratis).
+    // engine: 'auto' = Edge TTS (gratis, tanpa API key);
+    //         'edge'  = paksa Edge TTS.
     // Voice default en-GB-RyanNeural = pria Inggris kalem ala JARVIS.
     'tts' => [
         'engine' => env('JARVIS_TTS_ENGINE', 'auto'),
@@ -38,28 +38,17 @@ return [
         'max_chars' => 600,
         'cache_ttl' => 86400,
 
-        // XTTS Local — voice cloning offline via speak_clone.py (GPU lokal).
-        // Set XTTS_PYTHON ke path Python venv jika bukan 'python'.
+        // XTTS Local — voice cloning offline (GPU lokal).
+        // Utama: server persisten ai/xtts_server.py (model warm, ±3-5 dtk).
+        //   Jalankan ai\start_xtts_server.bat sekali saat PC menyala.
+        // Fallback: spawn speak_clone.py per-request (±45 dtk, butuh env Windows lengkap).
         'xtts' => [
             'enabled' => env('XTTS_ENABLED', false),
+            'server_url' => env('XTTS_SERVER_URL', 'http://127.0.0.1:8012'),
             'python' => env('XTTS_PYTHON', 'python'),
             'script' => env('XTTS_SCRIPT', base_path('../ai/speak_clone.py')),
             'ref_audio' => env('XTTS_REF_AUDIO', base_path('../ai/voice-previews/5-jarvis.mp3')),
-            'timeout' => (int) env('XTTS_TIMEOUT', 90),
-        ],
-
-        // ElevenLabs — suara JARVIS hasil voice cloning / voice komunitas.
-        // Model multilingual mendukung bahasa Indonesia.
-        'elevenlabs' => [
-            'api_key' => env('ELEVENLABS_API_KEY'),
-            'voice_id' => env('ELEVENLABS_VOICE_ID'),
-            'model_id' => env('ELEVENLABS_MODEL_ID', 'eleven_multilingual_v2'),
-            'output_format' => env('ELEVENLABS_OUTPUT_FORMAT', 'mp3_44100_128'),
-            'stability' => (float) env('ELEVENLABS_STABILITY', 0.5),
-            'similarity_boost' => (float) env('ELEVENLABS_SIMILARITY', 0.75),
-            'style' => (float) env('ELEVENLABS_STYLE', 0.0),
-            'speaker_boost' => (bool) env('ELEVENLABS_SPEAKER_BOOST', true),
-            'timeout' => (int) env('ELEVENLABS_TIMEOUT', 30),
+            'timeout' => (int) env('XTTS_TIMEOUT', 120),
         ],
     ],
 ];

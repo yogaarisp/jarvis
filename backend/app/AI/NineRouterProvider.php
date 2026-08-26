@@ -41,7 +41,7 @@ class NineRouterProvider implements AIProviderInterface, ToolCallingProvider
     {
         if (! $this->configured()) {
             throw new RuntimeException(
-                '9Router belum dikonfigurasi. Lengkapi 9ROUTER_BASE_URL, 9ROUTER_API_KEY, dan 9ROUTER_MODEL.'
+                '9Router belum dikonfigurasi. Lengkapi NINE_ROUTER_BASE_URL, NINE_ROUTER_API_KEY, dan NINE_ROUTER_MODEL.'
             );
         }
 
@@ -76,7 +76,7 @@ class NineRouterProvider implements AIProviderInterface, ToolCallingProvider
     {
         if (! $this->configured()) {
             throw new RuntimeException(
-                '9Router belum dikonfigurasi. Lengkapi 9ROUTER_BASE_URL, 9ROUTER_API_KEY, dan 9ROUTER_MODEL.'
+                '9Router belum dikonfigurasi. Lengkapi NINE_ROUTER_BASE_URL, NINE_ROUTER_API_KEY, dan NINE_ROUTER_MODEL.'
             );
         }
 
@@ -208,7 +208,7 @@ class NineRouterProvider implements AIProviderInterface, ToolCallingProvider
         if (! $this->configured()) {
             return [
                 'ok' => false,
-                'message' => 'Konfigurasi belum lengkap (9ROUTER_BASE_URL / API_KEY / MODEL).',
+                'message' => 'Konfigurasi belum lengkap (NINE_ROUTER_BASE_URL / API_KEY / MODEL).',
                 'latency_ms' => null,
             ];
         }

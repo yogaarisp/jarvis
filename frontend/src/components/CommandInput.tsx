@@ -24,6 +24,9 @@ export function CommandInput({
   const [holdHint, setHoldHint] = useState(false)
   const sttRef = useRef<SttEngine | null>(null)
   const spaceDownAt = useRef<number | null>(null)
+  // Teks yang sudah diketik user sebelum mic dinyalakan (dipisah dari hasil voice).
+  const typedBaseRef = useRef('')
+  const finalizeTimer = useRef<number | null>(null)
 
   useEffect(() => {
     const engine = new SttEngine(voicePrefs.language, false)
@@ -34,33 +37,68 @@ export function CommandInput({
       setMicActive(false)
       console.warn('[STT]', m)
     }
-    engine.onFinal = (txt) => setValue((v) => (v ? v + ' ' : '') + txt)
+    // onFinal mengirim transkrip KUMULATIF → replace, jangan di-append
+    // (append menyebabkan teks dobel/kacau saat ada beberapa potongan final).
+    engine.onFinal = (txt) => {
+      setInterim('')
+      setValue((typedBaseRef.current ? typedBaseRef.current + ' ' : '') + txt.trim())
+    }
     sttRef.current = engine
     return () => {
       engine.cancel()
+      if (finalizeTimer.current) window.clearTimeout(finalizeTimer.current)
     }
   }, [voicePrefs.language])
 
   function startMic() {
     const engine = sttRef.current
-    if (!engine) return
-    if (!engine.isAvailable()) return
+    if (!engine || !engine.isAvailable()) return
+    if (engine.isListening()) return
+    typedBaseRef.current = value.trim()
     setInterim('')
     engine.start()
+  }
+
+  /** Gabungkan teks ketikan + hasil voice (final + sisa interim), lalu kirim bila diminta. */
+  function finalizeMic(send: boolean) {
+    const engine = sttRef.current
+    if (!engine) return
+
+    const finalText = engine.finalText.trim()
+    // Interim = slot hasil aktif yang belum difinalisasi Chrome (bukan duplikat final).
+    const pending = engine.interimText.trim()
+    const combined = [typedBaseRef.current, finalText, pending]
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join(' ')
+
+    // Hentikan total & bersihkan state engine agar event telat tidak menimpa.
+    engine.cancel()
+    setInterim('')
+    setValue(combined)
+
+    if (send && combined && !busy) {
+      onSend(combined)
+      setValue('')
+    }
+    typedBaseRef.current = ''
   }
 
   function stopMic(send = false) {
     const engine = sttRef.current
     if (!engine) return
-    if (!engine.isListening()) return
-    const finalText = engine.stop().trim()
-    const combined = (value + (value && finalText ? ' ' : '') + finalText).trim()
-    setInterim('')
-    setValue(combined)
-    if (send && combined && !busy) {
-      onSend(combined)
-      setValue('')
-    }
+    // Chrome bisa berhenti lebih dulu saat hening → izinkan finalize dari transkrip tersisa.
+    if (!engine.isListening() && !engine.hasTranscript()) return
+
+    engine.stop()
+
+    // Beri jeda singkat agar Chrome sempat mengirim hasil final terakhir,
+    // lalu kunci hasil dan (opsional) kirim otomatis.
+    if (finalizeTimer.current) window.clearTimeout(finalizeTimer.current)
+    finalizeTimer.current = window.setTimeout(() => {
+      finalizeTimer.current = null
+      finalizeMic(send)
+    }, 450)
   }
 
   function toggleMic(e: React.MouseEvent) {

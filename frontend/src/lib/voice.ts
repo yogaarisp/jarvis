@@ -2,6 +2,12 @@ import type { VoicePrefs } from '../types'
 import { getToken } from './api'
 
 const PREFS_KEY = 'jarvis_voice_prefs'
+/**
+ * Versi skema prefs. Naikkan bila default suara berubah — prefs versi lama
+ * di-migrate (suara di-reset ke default baru, preferensi lain dipertahankan).
+ * v2: default suara → 'jarvis-cloned' (JARVIS Master / XTTS lokal).
+ */
+const PREFS_VERSION = 2
 
 export const DEFAULT_VOICE_PREFS: VoicePrefs = {
   sttEnabled: true,
@@ -13,32 +19,32 @@ export const DEFAULT_VOICE_PREFS: VoicePrefs = {
   ttsServerVoice: 'jarvis-cloned',
 }
 
-/** Voice neural server (Microsoft Edge TTS) — pilihan suara neural ala JARVIS & natural. */
+/** Satu-satunya suara server: JARVIS Master (XTTS clone lokal, referensi Paul Bettany).
+ * Fallback internal saat XTTS tidak tersedia: Edge TTS Ryan → suara browser (tidak dipilih user). */
 export const SERVER_VOICES: Array<{ id: string; label: string; desc?: string; accent?: string; cloned?: boolean }> = [
-  { id: 'jarvis-cloned', label: 'JARVIS Cloned (XTTS Lokal) ★', desc: 'Suara cloning AI lokal (XTTS v2) dari referensi Paul Bettany — butuh GPU', accent: 'AI Clone', cloned: true },
-  { id: 'en-GB-RyanNeural', label: 'Ryan · Pria British (JARVIS)', desc: 'British English formal & berwibawa ala JARVIS', accent: 'British' },
-  { id: 'en-GB-ThomasNeural', label: 'Thomas · Pria British', desc: 'British English natural, artikulasi jernih', accent: 'British' },
-  { id: 'en-US-EricNeural', label: 'Eric · Pria Amerika', desc: 'US English percaya diri & modern', accent: 'American' },
-  { id: 'en-US-AndrewNeural', label: 'Andrew · Pria Amerika', desc: 'US English hangat & santai', accent: 'American' },
-  { id: 'id-ID-ArdiNeural', label: 'Ardi · Pria Indonesia', desc: 'Bahasa Indonesia intonasi formal & jelas', accent: 'Indonesian' },
-  { id: 'id-ID-GadisNeural', label: 'Gadis · Wanita Indonesia', desc: 'Bahasa Indonesia wanita natural & ramah', accent: 'Indonesian' },
-  { id: 'en-US-GuyNeural', label: 'Guy · Pria Amerika', desc: 'US English kasual & standar', accent: 'American' },
-  { id: 'en-US-ChristopherNeural', label: 'Christopher · Pria Amerika (Deep)', desc: 'US English bernada berat & dalam', accent: 'American' },
+  { id: 'jarvis-cloned', label: 'JARVIS Master (Paul Bettany) ★', desc: 'Suara asli JARVIS film Iron Man via XTTS v2 lokal (GPU)', accent: 'AI Clone', cloned: true },
 ]
 
 export function loadVoicePrefs(): VoicePrefs {
   try {
     const raw = localStorage.getItem(PREFS_KEY)
-    if (!raw) return { ...DEFAULT_VOICE_PREFS }
+    if (!raw) return { ...DEFAULT_VOICE_PREFS, version: PREFS_VERSION }
     const parsed = JSON.parse(raw) as Partial<VoicePrefs>
-    return { ...DEFAULT_VOICE_PREFS, ...parsed }
+    const prefs: VoicePrefs = { ...DEFAULT_VOICE_PREFS, ...parsed }
+    // Migrasi versi lama: terapkan default suara baru (JARVIS Master clone),
+    // preferensi lain (rate, language, engine) tetap dipertahankan.
+    if ((parsed.version ?? 1) < PREFS_VERSION) {
+      prefs.ttsServerVoice = DEFAULT_VOICE_PREFS.ttsServerVoice
+      saveVoicePrefs(prefs)
+    }
+    return prefs
   } catch {
-    return { ...DEFAULT_VOICE_PREFS }
+    return { ...DEFAULT_VOICE_PREFS, version: PREFS_VERSION }
   }
 }
 
 export function saveVoicePrefs(prefs: VoicePrefs): void {
-  localStorage.setItem(PREFS_KEY, JSON.stringify(prefs))
+  localStorage.setItem(PREFS_KEY, JSON.stringify({ ...prefs, version: PREFS_VERSION }))
 }
 
 export function isSttAvailable(): boolean {
@@ -238,6 +244,11 @@ export class SttEngine {
   isListening(): boolean {
     return this.active
   }
+
+  /** Punya transkrip siap dipakai (final maupun interim yang belum difinalisasi). */
+  hasTranscript(): boolean {
+    return this.finalText.trim() !== '' || this.interimText.trim() !== ''
+  }
 }
 
 /**
@@ -288,8 +299,8 @@ export class TtsEngine {
 
   /**
    * Ucapkan teks. Bila sedang berbicara, yang lama dibatalkan.
-   * Default memakai TTS neural server (en-GB-RyanNeural ala JARVIS);
-   * bila server gagal, fallback ke speechSynthesis browser.
+   * Default memakai TTS server voice clone JARVIS (XTTS v2 lokal);
+   * bila server gagal, fallback ke Edge TTS lalu speechSynthesis browser.
    */
   speak(text: string): void {
     if (!this.prefs.ttsEnabled) return

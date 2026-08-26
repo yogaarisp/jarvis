@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use Afaya\EdgeTTS\Service\EdgeTTS;
 use App\Http\Controllers\Controller;
-use App\Services\ElevenLabsTtsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -13,78 +12,31 @@ use Illuminate\Http\Response;
  * TTS neural sisi server (PRD §7).
  *
  * Engine:
- * - ElevenLabs : suara JARVIS hasil cloning/komunitas (butuh ELEVENLABS_API_KEY).
  * - Edge TTS   : gratis tanpa API key (en-GB-RyanNeural ala JARVIS).
+ * - XTTS lokal : voice cloning offline via /tts/clone.
  *
- * engine 'auto' memakai ElevenLabs bila terkonfigurasi, fallback Edge.
  * Hasil sintesis di-cache di storage/app/tts-cache agar frasa berulang
  * (sapaan, wake reply) tidak disintesis ulang.
  */
 class TtsController extends Controller
 {
-    public function __construct(private readonly ElevenLabsTtsService $elevenlabs)
-    {
-    }
-
     public function speak(Request $request): Response|JsonResponse
     {
         $validated = $request->validate([
             'text' => ['required', 'string', 'max:'.config('jarvis.tts.max_chars', 600)],
-            'engine' => ['nullable', 'in:auto,elevenlabs,edge'],
+            'engine' => ['nullable', 'in:auto,edge'],
             'voice' => ['nullable', 'string', 'max:120'],
             'rate' => ['nullable', 'regex:/^[+-]?\d{1,3}%$/'],
             'pitch' => ['nullable', 'regex:/^[+-]?\d{1,3}Hz$/'],
         ]);
 
-        $requested = $validated['engine'] ?? config('jarvis.tts.engine', 'auto');
         $text = trim($validated['text']);
 
         if ($text === '') {
             return response()->json(['success' => false, 'message' => 'Teks kosong.'], 422);
         }
 
-        if ($requested === 'auto' && $this->elevenlabs->isConfigured()) {
-            try {
-                return $this->respondSynthesized(
-                    'elevenlabs',
-                    fn () => $this->elevenlabs->synthesize($text, $validated['voice'] ?? null),
-                    $text,
-                    $validated['voice'] ?? null
-                );
-            } catch (\Throwable $e) {
-                report($e);
-                // auto: lanjut fallback ke Edge bila ElevenLabs gagal
-            }
-        } elseif ($requested === 'elevenlabs') {
-            if (! $this->elevenlabs->isConfigured()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'ElevenLabs belum dikonfigurasi. Isi ELEVENLABS_API_KEY dan ELEVENLABS_VOICE_ID.',
-                ], 503);
-            }
-
-            try {
-                return $this->respondSynthesized(
-                    'elevenlabs',
-                    fn () => $this->elevenlabs->synthesize($text, $validated['voice'] ?? null),
-                    $text,
-                    $validated['voice'] ?? null
-                );
-            } catch (\Throwable $e) {
-                report($e);
-
-                return response()->json([
-                    'success' => false,
-                    'message' => 'TTS ElevenLabs gagal: '.$e->getMessage(),
-                ], 502);
-            }
-        }
-
         // ---- Engine Edge TTS ----
-        if ($requested === 'elevenlabs') {
-            return response()->json(['success' => false, 'message' => 'Unreachable.'], 500);
-        }
-
         $voice = $validated['voice'] ?? config('jarvis.tts.voice', 'en-GB-RyanNeural');
         if (! preg_match('/^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$/', $voice)) {
             $voice = config('jarvis.tts.voice', 'en-GB-RyanNeural');
@@ -116,10 +68,15 @@ class TtsController extends Controller
     }
 
     /**
-     * GET /api/tts/clone — Sintesis via XTTS v2 lokal (speak_clone.py).
-     * Query params: text, language (default: en), ref (optional path override).
+     * GET /api/tts/clone — Sintesis via XTTS v2 lokal (suara JARVIS Master).
+     * Query params: text, language (default: en).
      *
-     * Memerlukan XTTS_ENABLED=true dan Python venv terpasang.
+     * Urutan:
+     *   1. Server XTTS persisten (ai/xtts_server.py, model warm → ±3-5 dtk).
+     *   2. Fallback: spawn speak_clone.py per-request (±45 dtk).
+     *   3. Hasil di-cache di storage/app/tts-cache agar frasa berulang instan.
+     *
+     * Memerlukan XTTS_ENABLED=true.
      */
     public function speakClone(Request $request): Response|JsonResponse
     {
@@ -135,7 +92,6 @@ class TtsController extends Controller
         $validated = $request->validate([
             'text' => ['required', 'string', 'max:'.config('jarvis.tts.max_chars', 600)],
             'language' => ['nullable', 'string', 'max:10'],
-            'rate' => ['nullable', 'regex:/^[+-]?\d{1,3}%$/'],
         ]);
 
         $text = trim($validated['text']);
@@ -150,19 +106,73 @@ class TtsController extends Controller
             $language = 'en';
         }
 
+        // ---- Cache: frasa yang sama tidak disintesis ulang ----
+        $cacheDir = storage_path('app/tts-cache');
+        $cacheFile = $cacheDir.DIRECTORY_SEPARATOR.md5('xtts|'.$language.'|'.$text).'.wav';
+        if (is_file($cacheFile) && (time() - (int) filemtime($cacheFile)) < (int) config('jarvis.tts.cache_ttl', 86400)) {
+            return $this->wavResponse((string) file_get_contents($cacheFile));
+        }
+
+        // ---- 1) Server XTTS persisten (utama) ----
+        $audio = $this->synthesizeViaServer($cfg, $text, $language);
+
+        // ---- 2) Fallback: spawn proses python per-request ----
+        if ($audio === null) {
+            $audio = $this->synthesizeViaProcess($cfg, $text, $language);
+        }
+
+        if ($audio === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'XTTS tidak tersedia. Jalankan ai\start_xtts_server.bat lalu coba lagi.',
+            ], 502);
+        }
+
+        if (! is_dir($cacheDir)) {
+            @mkdir($cacheDir, 0775, true);
+        }
+        @file_put_contents($cacheFile, $audio);
+
+        return $this->wavResponse($audio);
+    }
+
+    /**
+     * Sintesis via server persisten (http://127.0.0.1:8012/tts). Null bila server mati/gagal.
+     */
+    private function synthesizeViaServer(array $cfg, string $text, string $language): ?string
+    {
+        $base = rtrim((string) ($cfg['server_url'] ?? 'http://127.0.0.1:8012'), '/');
+
+        try {
+            $resp = \Illuminate\Support\Facades\Http::timeout((int) ($cfg['timeout'] ?? 120))
+                ->get($base.'/tts', ['text' => $text, 'language' => $language]);
+
+            if ($resp->successful() && strlen($resp->body()) > 44) { // 44 = header wav minimal
+                return $resp->body();
+            }
+        } catch (\Throwable) {
+            // Server tidak berjalan → biarkan fallback ke proses.
+        }
+
+        return null;
+    }
+
+    /**
+     * Sintesis via speak_clone.py (spawn per-request, lambat ±45 dtk karena model dimuat ulang).
+     * Env Windows eksplisit — child process dari PHP sering kehilangan SystemRoot
+     * sehingga Winsock gagal init (WinError 10106).
+     */
+    private function synthesizeViaProcess(array $cfg, string $text, string $language): ?string
+    {
         $python = $cfg['python'];
         $script = $cfg['script'];
         $refAudio = $cfg['ref_audio'];
-        $timeout = (int) ($cfg['timeout'] ?? 90);
+        $timeout = (int) ($cfg['timeout'] ?? 120);
 
-        if (! file_exists($script)) {
-            return response()->json(['success' => false, 'message' => 'Script XTTS tidak ditemukan: '.$script], 500);
-        }
-        if (! file_exists($refAudio)) {
-            return response()->json(['success' => false, 'message' => 'File referensi XTTS tidak ditemukan: '.$refAudio], 500);
+        if (! file_exists($script) || ! file_exists($refAudio)) {
+            return null;
         }
 
-        // Simpan output ke temp file
         $outFile = sys_get_temp_dir().DIRECTORY_SEPARATOR.'jarvis_xtts_'.uniqid().'.wav';
 
         $cmd = array_map('strval', [
@@ -174,28 +184,50 @@ class TtsController extends Controller
             '--save', $outFile,
         ]);
 
-        $process = new \Symfony\Component\Process\Process($cmd);
+        $env = [];
+        foreach ([
+            'SystemRoot', 'windir', 'SystemDrive', 'PATH', 'TEMP', 'TMP',
+            'COMPUTERNAME', 'USERNAME', 'USERDOMAIN', 'USERPROFILE',
+            'HOMEDRIVE', 'HOMEPATH', 'LOCALAPPDATA', 'PROGRAMDATA',
+            'PROGRAMFILES', 'COMMONPROGRAMFILES',
+        ] as $key) {
+            $val = getenv($key);
+            if (is_string($val) && $val !== '') {
+                $env[$key] = $val;
+            }
+        }
+        $env += [
+            'SystemRoot' => 'C:\\Windows',
+            'windir' => 'C:\\Windows',
+            'SystemDrive' => 'C:',
+            'TEMP' => sys_get_temp_dir(),
+            'TMP' => sys_get_temp_dir(),
+        ];
+
+        $process = new \Symfony\Component\Process\Process($cmd, null, $env);
         $process->setTimeout($timeout);
 
         try {
             $process->run();
-        } catch (\Throwable $e) {
-            return response()->json(['success' => false, 'message' => 'XTTS proses gagal: '.$e->getMessage()], 502);
+        } catch (\Throwable) {
+            return null;
         }
 
         if (! $process->isSuccessful() || ! file_exists($outFile) || filesize($outFile) === 0) {
-            $errOut = trim($process->getErrorOutput() ?: $process->getOutput());
             @unlink($outFile);
-            return response()->json([
-                'success' => false,
-                'message' => 'XTTS synthesize gagal: '.($errOut ?: 'output kosong'),
-            ], 502);
+
+            return null;
         }
 
         $audio = file_get_contents($outFile);
         @unlink($outFile);
 
-        return response((string) $audio, 200, [
+        return $audio === false ? null : $audio;
+    }
+
+    private function wavResponse(string $binary): Response
+    {
+        return response($binary, 200, [
             'Content-Type' => 'audio/wav',
             'Cache-Control' => 'private, max-age=3600',
         ]);
@@ -397,47 +429,6 @@ class TtsController extends Controller
             'description' => 'Sampel audio preview: ' . $filename,
             'accent' => 'Custom Audio',
         ];
-    }
-
-    /**
-     * POST /api/tts/clone-voice — Instant Voice Cloning dari sample audio.
-     * Body multipart: name (string), sample (file mp3/wav).
-     */
-    public function cloneVoice(Request $request): JsonResponse
-    {
-        if (! filled(config('jarvis.tts.elevenlabs.api_key'))) {
-            return response()->json([
-                'success' => false,
-                'message' => 'ELEVENLABS_API_KEY belum diisi.',
-            ], 503);
-        }
-
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:60'],
-            'sample' => ['required', 'file', 'mimes:mp3,wav,mpeg,x-wav', 'max:20480'],
-        ]);
-
-        $storedPath = $this->elevenlabs->storeSample($validated['sample']);
-
-        try {
-            $result = $this->elevenlabs->cloneFromSample(
-                $validated['name'],
-                new \Illuminate\Http\UploadedFile($storedPath, basename($storedPath), null, 0, true)
-            );
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Voice berhasil dibuat. Set ELEVENLABS_VOICE_ID='.$result['voice_id'].' untuk mengaktifkannya.',
-                'data' => $result,
-            ]);
-        } catch (\Throwable $e) {
-            report($e);
-
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 502);
-        }
     }
 
     private function respondSynthesized(

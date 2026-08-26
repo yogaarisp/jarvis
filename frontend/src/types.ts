@@ -104,6 +104,8 @@ export interface VoicePrefs {
   ttsEngine?: 'server' | 'browser'
   /** Voice neural server, mis. en-GB-RyanNeural (pria Inggris ala JARVIS). */
   ttsServerVoice?: string
+  /** Versi skema prefs — untuk migrasi default suara ke pengguna lama. */
+  version?: number
 }
 
 export interface VoicePreviewItem {

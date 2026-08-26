@@ -4,6 +4,7 @@ namespace App\Agent;
 
 use App\AI\AIProviderManager;
 use App\AI\ToolCallingProvider;
+use App\Services\SystemControlService;
 use App\Services\WebSearchService;
 use Generator;
 use InvalidArgumentException;
@@ -26,6 +27,7 @@ class AgentService
     public function __construct(
         private readonly AIProviderManager $providers,
         private readonly WebSearchService $web,
+        private readonly SystemControlService $systemControl,
     ) {}
 
     /**
@@ -127,6 +129,32 @@ class AgentService
                     ],
                 ],
             ],
+            [
+                'type' => 'function',
+                'function' => [
+                    'name' => 'system_control',
+                    'description' => 'Kendalikan aplikasi di PC Keenan (hanya saat JARVIS berjalan lokal di PC-nya). '
+                        .'open_url = buka situs di browser default (contoh: "buka YouTube" → action=open_url, target=youtube). '
+                        .'open_app = buka aplikasi/protokol (contoh: "buka WhatsApp" → action=open_app, target=whatsapp). '
+                        .'close_app = tutup aplikasi (contoh: "tutup Chrome" → action=close_app, target=chrome). '
+                        .'Untuk close_app, konfirmasi dulu ke Keenan bila permintaannya tidak eksplisit.',
+                    'parameters' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'action' => [
+                                'type' => 'string',
+                                'enum' => ['open_url', 'open_app', 'close_app'],
+                                'description' => 'Jenis aksi kontrol sistem.',
+                            ],
+                            'target' => [
+                                'type' => 'string',
+                                'description' => 'Alias aplikasi/situs (youtube, whatsapp, chrome, edge, notepad, spotify, vscode, gmail, dll.) atau URL lengkap untuk open_url.',
+                            ],
+                        ],
+                        'required' => ['action', 'target'],
+                    ],
+                ],
+            ],
         ];
     }
 
@@ -184,6 +212,14 @@ class AgentService
                         'content' => $page['content'],
                     ], JSON_UNESCAPED_UNICODE) ?: '{}';
 
+                case 'system_control':
+                    $result = $this->systemControl->execute(
+                        (string) ($arguments['action'] ?? ''),
+                        (string) ($arguments['target'] ?? ''),
+                    );
+
+                    return json_encode($result, JSON_UNESCAPED_UNICODE) ?: '{}';
+
                 default:
                     throw new InvalidArgumentException("Tool [{$name}] tidak dikenal.");
             }
@@ -200,6 +236,12 @@ class AgentService
         return match ($name) {
             'web_search' => 'Mencari di internet: '.mb_substr((string) ($arguments['query'] ?? ''), 0, 60),
             'open_page' => 'Membuka halaman: '.mb_substr((string) ($arguments['url'] ?? ''), 0, 60),
+            'system_control' => match ((string) ($arguments['action'] ?? '')) {
+                'open_url' => 'Membuka di browser: '.mb_substr((string) ($arguments['target'] ?? ''), 0, 60),
+                'open_app' => 'Membuka aplikasi: '.mb_substr((string) ($arguments['target'] ?? ''), 0, 60),
+                'close_app' => 'Menutup aplikasi: '.mb_substr((string) ($arguments['target'] ?? ''), 0, 60),
+                default => 'Kontrol sistem...',
+            },
             default => "Menjalankan {$name}...",
         };
     }

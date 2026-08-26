@@ -159,9 +159,8 @@ export function CorePage() {
       console.warn('[STT]', m)
     }
     engine.onFinal = (txt) => {
-      if (txt.trim()) {
-        setInputText((prev) => (prev ? prev + ' ' : '') + txt)
-      }
+      // txt kumulatif dari engine → assign langsung, jangan di-append (hindari dobel).
+      if (txt.trim()) setInputText(txt)
     }
     pushToTalkRef.current = engine
     return () => engine.cancel()
@@ -252,9 +251,13 @@ export function CorePage() {
       if (!spaceDownAt.current) return
       spaceDownAt.current = null
       if (pushToTalkRef.current && pushToTalkRef.current.isListening()) {
-        const finalText = pushToTalkRef.current.stop().trim()
-        if (finalText) {
-          handleSend(finalText)
+        const engine = pushToTalkRef.current
+        // Final + sisa interim (slot berbeda, bukan duplikat).
+        const spoken = [engine.stop().trim(), engine.interimText.trim()]
+          .filter(Boolean)
+          .join(' ')
+        if (spoken) {
+          handleSend(spoken)
           setInputText('')
         }
       }
