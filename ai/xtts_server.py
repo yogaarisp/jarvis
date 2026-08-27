@@ -113,6 +113,40 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def synthesize(text: str, ref: str, language: str) -> bytes:
+    """Sintesis teks → WAV bytes via XTTS v2.
+
+    Preprocessing dilakukan di sini agar suara lebih natural:
+    - Kalimat dipecah per titik/koma untuk split_sentences yang lebih akurat.
+    - Tanda baca berlebih dirapikan.
+    - Tambah sedikit jeda (koma) setelah sapaan agar tidak kecebutan.
+    """
+    import re
+
+    # Bersihkan token AI: [1], <think>, dst.
+    text = re.sub(r'\[\d+\]', '', text)
+    text = re.sub(r'</?think[^>]*>', ' ', text, flags=re.IGNORECASE)
+
+    # Markdown → teks biasa
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+    text = re.sub(r'\*([^*]+)\*', r'\1', text)
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+    text = re.sub(r'#{1,6}\s+', '', text)
+
+    # Tanda baca yang bikin robot: titik dua, em-dash, tanda kurung
+    text = re.sub(r':\s*', ', ', text)
+    text = re.sub(r';\s*', ', ', text)
+    text = re.sub(r'\s*[—–]\s*', ', ', text)
+    text = re.sub(r'[()[\]{}]', '', text)
+
+    # Bersihkan tanda baca ganda
+    text = re.sub(r'([.,!?]){2,}', r'\1', text)
+    text = re.sub(r',\s*([.!?])', r'\1', text)
+    text = re.sub(r'\s+([.,!?])', r'\1', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    if not text:
+        raise ValueError("Teks kosong setelah preprocessing.")
+
     out_path = Path(tempfile.gettempdir()) / f"xtts_server_{os.getpid()}.wav"
     with _lock:  # antre agar GPU tidak dipakai bersamaan
         _tts.tts_to_file(

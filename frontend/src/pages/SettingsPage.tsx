@@ -3,10 +3,8 @@ import {
   fetchAiModels,
   getSettings,
   getUserPreferences,
-  getVoicePreviews,
   getWakeSettings,
   testAiConnection,
-  testHermesConnection,
   updateSettings,
   updateUserPreferences,
   updateWakeSettings,
@@ -16,13 +14,11 @@ import type {
   AppSettingsBundle,
   ConnectionTest,
   VoicePrefs,
-  VoicePreviewItem,
   WakeSettings,
 } from '../types'
 import { SettingsPanel } from '../components/SettingsPanel'
 import {
   DEFAULT_VOICE_PREFS,
-  SERVER_VOICES,
   TtsEngine,
   isSttAvailable,
   isTtsAvailable,
@@ -31,10 +27,6 @@ import {
 } from '../lib/voice'
 import { WakeEngine } from '../lib/wake'
 
-const DEFAULT_VOICE_PREVIEWS: VoicePreviewItem[] = [
-  { filename: '5-jarvis-cloned.wav', name: 'JARVIS Cloned', voice_id: 'jarvis-cloned', group: 'JARVIS Cloned / Master', lang: 'EN', format: 'wav', size_bytes: 284300, size_formatted: '277.6 KB', title: 'JARVIS Cloned (XTTS Local AI)', description: 'Hasil sintesis cloning AI lokal (XTTS v2 model) dari suara Paul Bettany.', accent: 'AI Neural Clone', url: '/api/tts/previews/5-jarvis-cloned.wav' },
-  { filename: '5-jarvis.mp3', name: 'JARVIS Master Reference', voice_id: 'jarvis-cloned', group: 'JARVIS Cloned / Master', lang: 'EN', format: 'mp3', size_bytes: 163003, size_formatted: '159.2 KB', title: 'JARVIS Master (Film Iron Man Reference)', description: 'Sampel rekaman suara asli Paul Bettany pemeran JARVIS di film Marvel.', accent: 'JARVIS Original Master', url: '/api/tts/previews/5-jarvis.mp3' },
-]
 
 const DEFAULT_WAKE: WakeSettings = {
   clap_enabled: false,
@@ -44,11 +36,10 @@ const DEFAULT_WAKE: WakeSettings = {
   cooldown_ms: 2000,
 }
 
-type TabKey = 'ai' | 'hermes' | 'jarvis' | 'voice' | 'wake'
+type TabKey = 'ai' | 'jarvis' | 'voice' | 'wake'
 
 const TABS: { key: TabKey; label: string; desc: string }[] = [
-  { key: 'ai', label: 'AI · 9Router', desc: 'Provider default, Base URL, API Key, model, timeout.' },
-  { key: 'hermes', label: 'Hermes', desc: 'Worker eksekusi tool & agent eksternal.' },
+  { key: 'ai', label: 'AI Provider', desc: 'Pilih provider (Gemini/Claude/OpenAI/Custom), Base URL, API Key, model.' },
   { key: 'jarvis', label: 'JARVIS', desc: 'System prompt dan batas riset default.' },
   { key: 'voice', label: 'Voice & Previews', desc: 'Sample audio voice-previews, STT & TTS neural.' },
   { key: 'wake', label: 'Wake Engine', desc: 'Double/triple clap wake via mic lokal.' },
@@ -87,13 +78,13 @@ export default function SettingsPage({
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
   const [aiTest, setAiTest] = useState<ConnectionTest | null>(null)
   const [aiTestLoading, setAiTestLoading] = useState(false)
-  const [hermesTest, setHermesTest] = useState<ConnectionTest | null>(null)
-  const [hermesTestLoading, setHermesTestLoading] = useState(false)
-  // Daftar model dari gateway 9Router — untuk dropdown model utama & fallback.
+  // Daftar model dari AI Provider — untuk dropdown model utama & fallback.
   const [aiModels, setAiModels] = useState<string[]>([])
   const [aiModelsLoading, setAiModelsLoading] = useState(false)
   const [aiModelsMsg, setAiModelsMsg] = useState<string | null>(null)
   const aiModelsAutoRef = useRef(false)
+  const apiKeyDebounceRef = useRef<number | null>(null)
+  const prevApiKeyRef = useRef<string>('')
   // Debounce save user prefs ke DB — agar tiap keystroke ttsRate tidak langsung PUT spam.
   const voiceSaveTimerRef = useRef<number | null>(null)
   // State internal — dipakai hanya saat komponen tidak dikendalikan dari luar.
@@ -112,8 +103,6 @@ export default function SettingsPage({
     setIntVoice(v)
   }
 
-  const [voicePreviews, setVoicePreviews] = useState<VoicePreviewItem[]>([])
-  const [loadingPreviews, setLoadingPreviews] = useState(false)
   const [playingFile, setPlayingFile] = useState<string | null>(null)
   const [liveTesting, setLiveTesting] = useState(false)
   const [testText, setTestText] = useState('Halo Keenan, sistem JARVIS siap dan beroperasi normal.')
@@ -207,19 +196,31 @@ export default function SettingsPage({
     ttsEngineRef.current?.updatePrefs(voicePrefs)
   }, [voicePrefs])
 
+  // Auto-set default Base URL & Model sesuai preset provider_type (jika masih kosong).
+  // Jadi user cuma perlu isi API Key saja untuk preset gemini/claude/openai.
   useEffect(() => {
-    if (tab === 'voice' && voicePreviews.length === 0) {
-      setLoadingPreviews(true)
-      getVoicePreviews()
-        .then((res) => {
-          if (res && res.files) {
-            setVoicePreviews(res.files)
-          }
-        })
-        .catch(() => undefined)
-        .finally(() => setLoadingPreviews(false))
+    const type = String(form['ai.providers.generic.provider_type'] ?? '').trim() as
+      | 'gemini' | 'claude' | 'openai' | 'custom' | ''
+    if (!type) return
+    const PRESET_DEFAULTS: Record<string, { base_url: string; model: string }> = {
+      gemini: { base_url: 'https://generativelanguage.googleapis.com/v1beta/openai/', model: 'gemini-2.0-flash' },
+      claude: { base_url: 'https://api.anthropic.com/v1/', model: 'claude-sonnet-4-20250514' },
+      openai: { base_url: 'https://api.openai.com/v1/', model: 'gpt-4o-mini' },
+      custom: { base_url: '', model: '' },
     }
-  }, [tab, voicePreviews.length])
+    const preset = PRESET_DEFAULTS[type]
+    if (!preset) return
+    setForm((prev) => {
+      const next = { ...prev }
+      const baseKey = 'ai.providers.generic.base_url'
+      const modelKey = 'ai.providers.generic.model'
+      const currBase = String(prev[baseKey] ?? '').trim()
+      const currModel = String(prev[modelKey] ?? '').trim()
+      if (preset.base_url && currBase === '') next[baseKey] = preset.base_url
+      if (preset.model && currModel === '') next[modelKey] = preset.model
+      return next
+    })
+  }, [form['ai.providers.generic.provider_type']])
 
   function togglePlayPreviewFile(url: string, filename: string) {
     if (playingFile === filename) {
@@ -313,22 +314,6 @@ export default function SettingsPage({
     }
   }
 
-  async function onTestHermes() {
-    setHermesTestLoading(true)
-    try {
-      const res = await testHermesConnection()
-      setHermesTest(res)
-    } catch (e) {
-      setHermesTest({
-        ok: false,
-        message: e instanceof Error ? e.message : 'Gagal tes koneksi.',
-        latency_ms: null,
-      })
-    } finally {
-      setHermesTestLoading(false)
-    }
-  }
-
   async function toggleWakeInternal(want: boolean) {
     setIntWakeError(null)
     if (want) {
@@ -365,14 +350,28 @@ export default function SettingsPage({
     return map
   }, [items])
 
-  /** Ambil daftar model dari gateway — pakai nilai form (baru) atau yang tersimpan. */
+  /** Ambil daftar model dari provider AI — pakai nilai form (baru) atau yang tersimpan. */
   const loadAiModels = useCallback(async () => {
     if (!bundle) return
+    const providerType =
+      String(form['ai.providers.generic.provider_type'] ?? '').trim() ||
+      String(items['ai.providers.generic.provider_type']?.value ?? 'custom')
+
+    // Untuk preset provider, base_url field disembunyikan dari UI —
+    // gunakan PRESET_DEFAULTS sebagai fallback agar model tetap bisa dimuat.
+    const PRESET_BASE_URLS: Record<string, string> = {
+      gemini: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      claude: 'https://api.anthropic.com/v1/',
+      openai: 'https://api.openai.com/v1/',
+    }
     const baseUrl =
-      String(form['ai.providers.nine_router.base_url'] ?? '').trim() ||
-      String(items['ai.providers.nine_router.base_url']?.value ?? '')
-    const typedKey = String(form['ai.providers.nine_router.api_key'] ?? '').trim()
-    const keySaved = Boolean(items['ai.providers.nine_router.api_key']?.is_filled)
+      String(form['ai.providers.generic.base_url'] ?? '').trim() ||
+      String(items['ai.providers.generic.base_url']?.value ?? '').trim() ||
+      PRESET_BASE_URLS[providerType] ||
+      ''
+
+    const typedKey = String(form['ai.providers.generic.api_key'] ?? '').trim()
+    const keySaved = Boolean(items['ai.providers.generic.api_key']?.is_filled)
 
     if (!baseUrl || (!typedKey && !keySaved)) {
       setAiModels([])
@@ -383,10 +382,25 @@ export default function SettingsPage({
     setAiModelsLoading(true)
     setAiModelsMsg(null)
     try {
-      const res = await fetchAiModels({ base_url: baseUrl, api_key: typedKey || null })
+      const res = await fetchAiModels({
+        base_url: baseUrl,
+        api_key: typedKey || null,
+        provider_type: providerType || null,
+      })
       if (res.ok) {
         setAiModels(res.models)
-        setAiModelsMsg(`${res.models.length} model tersedia di gateway.`)
+        setAiModelsMsg(`${res.models.length} model tersedia.`)
+        // Auto-pilih model pertama jika field model masih kosong.
+        if (res.models.length > 0) {
+          setForm((prev) => {
+            const modelKey = 'ai.providers.generic.model'
+            const currModel = String(prev[modelKey] ?? '').trim()
+            if (!currModel) {
+              return { ...prev, [modelKey]: res.models[0] }
+            }
+            return prev
+          })
+        }
       } else {
         setAiModels([])
         setAiModelsMsg(res.message ?? 'Gagal memuat daftar model.')
@@ -402,16 +416,38 @@ export default function SettingsPage({
   useEffect(() => {
     if (loading || !bundle || aiModelsAutoRef.current || tab !== 'ai') return
     const keyFilled =
-      Boolean(String(form['ai.providers.nine_router.api_key'] ?? '').trim()) ||
-      Boolean(items['ai.providers.nine_router.api_key']?.is_filled)
+      Boolean(String(form['ai.providers.generic.api_key'] ?? '').trim()) ||
+      Boolean(items['ai.providers.generic.api_key']?.is_filled)
     const urlFilled =
-      Boolean(String(form['ai.providers.nine_router.base_url'] ?? '').trim()) ||
-      Boolean(items['ai.providers.nine_router.base_url']?.value)
+      Boolean(String(form['ai.providers.generic.base_url'] ?? '').trim()) ||
+      Boolean(items['ai.providers.generic.base_url']?.value)
     if (keyFilled && urlFilled) {
       aiModelsAutoRef.current = true
       loadAiModels()
     }
   }, [loading, bundle, tab, form, items, loadAiModels])
+
+  // Auto-muat daftar model segera setelah API Key di-paste/diisi.
+  // Berlaku untuk semua provider — preset (gemini/claude/openai) maupun custom.
+  // Debounce 600ms agar tidak spam request tiap keystroke.
+  useEffect(() => {
+    if (loading || !bundle || tab !== 'ai') return
+    const typedKey = String(form['ai.providers.generic.api_key'] ?? '').trim()
+    // Hanya trigger jika API key berubah (bukan inisialisasi pertama).
+    if (typedKey === prevApiKeyRef.current) return
+    prevApiKeyRef.current = typedKey
+    if (!typedKey) return
+
+    if (apiKeyDebounceRef.current) window.clearTimeout(apiKeyDebounceRef.current)
+    apiKeyDebounceRef.current = window.setTimeout(() => {
+      aiModelsAutoRef.current = true
+      loadAiModels()
+    }, 600)
+
+    return () => {
+      if (apiKeyDebounceRef.current) window.clearTimeout(apiKeyDebounceRef.current)
+    }
+  }, [form['ai.providers.generic.api_key'], loading, bundle, tab, loadAiModels])
 
   return (
     <div
@@ -495,10 +531,40 @@ export default function SettingsPage({
               setForm={setForm}
               modelOptions={aiModels}
             >
+              {(() => {
+                const pType = String(
+                  form['ai.providers.generic.provider_type'] ??
+                    items['ai.providers.generic.provider_type']?.value ??
+                    'custom',
+                ).trim()
+                const isCustom = pType === 'custom'
+                return (
+                  <div
+                    className={`mb-3 mt-1 rounded-xl border p-3 text-[11px] sm:text-xs ${
+                      isCustom
+                        ? 'border-amber-200 bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300'
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-300'
+                    }`}
+                  >
+                    {isCustom ? (
+                      <>
+                        ⚙️ <strong>Mode Custom</strong>: wajib isi <strong>Base URL</strong>,{' '}
+                        <strong>API Key</strong>, dan <strong>Model</strong> manual.
+                      </>
+                    ) : (
+                      <>
+                        ✅ <strong>{pType.toUpperCase()}</strong>: cukup isi hanya{' '}
+                        <strong>API Key</strong> saja. Base URL & Model default sudah auto terisi
+                        (bisa diganti manual jika perlu).
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-3 border-t border-slate-200 dark:border-slate-800 mt-4">
                 <div className="min-w-0 flex-1 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
                   {aiModelsLoading
-                    ? 'Memuat daftar model dari gateway…'
+                    ? 'Memuat daftar model…'
                     : aiModelsMsg ?? 'Daftar model dimuat otomatis saat Base URL & API Key terisi.'}
                 </div>
                 <button
@@ -526,33 +592,6 @@ export default function SettingsPage({
                 </button>
               </div>
               {aiTest && <TestResult test={aiTest} />}
-            </Section>
-          )}
-
-          {!loading && tab === 'hermes' && bundle && (
-            <Section
-              title={groups['hermes']}
-              items={itemsByGroup['hermes'] ?? []}
-              form={form}
-              setForm={setForm}
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-4 border-t border-slate-200 dark:border-slate-800 mt-4">
-                <button
-                  onClick={onSaveAppSettings}
-                  disabled={saving}
-                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-medium disabled:opacity-50 transition"
-                >
-                  {saving ? 'Menyimpan…' : 'Simpan Pengaturan Hermes'}
-                </button>
-                <button
-                  onClick={onTestHermes}
-                  disabled={hermesTestLoading}
-                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-xs sm:text-sm disabled:opacity-50 transition"
-                >
-                  {hermesTestLoading ? 'Mencoba…' : 'Tes Koneksi Hermes'}
-                </button>
-              </div>
-              {hermesTest && <TestResult test={hermesTest} />}
             </Section>
           )}
 
@@ -607,96 +646,10 @@ export default function SettingsPage({
             />
           </div>
 
-          {/* TTS Engine Switcher */}
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/40 p-3.5 sm:p-5 space-y-3 sm:space-y-4 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
-              <div>
-                <h3 className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  Mesin Suara (TTS Engine)
-                </h3>
-                <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Pilih Neural Server (Edge TTS jernih ala JARVIS) atau Browser lokal.
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-1.5 w-full sm:w-auto">
-                <button
-                  type="button"
-                  onClick={() => setVoicePrefs({ ...voicePrefs, ttsEngine: 'server' })}
-                  className={`px-3 py-2 text-xs rounded-xl font-medium text-center transition ${
-                    (voicePrefs.ttsEngine ?? 'server') === 'server'
-                      ? 'bg-cyan-600 text-white shadow-sm font-semibold'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                  }`}
-                >
-                  ⚡ Server Neural
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVoicePrefs({ ...voicePrefs, ttsEngine: 'browser' })}
-                  className={`px-3 py-2 text-xs rounded-xl font-medium text-center transition ${
-                    voicePrefs.ttsEngine === 'browser'
-                      ? 'bg-cyan-600 text-white shadow-sm font-semibold'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                  }`}
-                >
-                  💻 Browser Local
-                </button>
-              </div>
-            </div>
-
-            {(voicePrefs.ttsEngine ?? 'server') === 'server' ? (
-              <div className="rounded-xl bg-cyan-500/10 border border-cyan-500/20 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-cyan-500/20 flex items-center justify-center text-cyan-500 font-bold text-base shrink-0">
-                    🎙️
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[11px] text-cyan-600 dark:text-cyan-400 font-medium">
-                      Suara Aktif Saat Ini:
-                    </div>
-                    <div className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">
-                      {SERVER_VOICES.find((v) => v.id === (voicePrefs.ttsServerVoice ?? 'jarvis-cloned'))?.label ?? voicePrefs.ttsServerVoice ?? 'jarvis-cloned'}
-                    </div>
-                  </div>
-                </div>
-                <span className="text-[10px] sm:text-[11px] px-2.5 py-1 rounded-full bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 font-mono self-start sm:self-auto shrink-0">
-                  {voicePrefs.ttsServerVoice ?? 'jarvis-cloned'}
-                </span>
-              </div>
-            ) : (
-              <div className="rounded-xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
-                💻 Memakai suara bawaan browser — otomatis memilih voice pria Inggris ala JARVIS yang tersedia di perangkat.
-              </div>
-            )}
-          </div>
-
-          {/* Section: Pilihan Suara dari Folder voice-previews */}
+          {/* JARVIS Master Voice Card */}
           <div className="space-y-3 sm:space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-              <div>
-                <h3 className="text-xs sm:text-sm font-bold tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5 flex-wrap">
-                  <span>🎧 PILIHAN SUARA & SAMPEL AUDIO</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-normal font-mono">
-                    ai/voice-previews
-                  </span>
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Dengarkan contoh bahasa Inggris & Indonesia, lalu pilih untuk suara JARVIS.
-                </p>
-              </div>
-              {loadingPreviews && (
-                <span className="text-xs text-cyan-500 animate-pulse">Memuat audio…</span>
-              )}
-            </div>
-
-            {/* Pilihan suara neural lain dihapus — hanya JARVIS Master */}
-
-            {/* 5. JARVIS Master & Cloned Feature Card */}
-            <div className={`rounded-2xl border transition p-3.5 sm:p-5 relative overflow-hidden ${
-              (voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned' && (voicePrefs.ttsEngine ?? 'server') === 'server'
-                ? 'border-amber-500/60 ring-1 ring-amber-500/40 bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-amber-950/20 shadow-md shadow-amber-500/5'
-                : 'border-amber-500/30 bg-gradient-to-r from-amber-500/5 via-amber-500/10 to-transparent'
-            }`}>
+            {/* JARVIS Master & Cloned Feature Card */}
+            <div className="rounded-2xl border border-amber-500/60 ring-1 ring-amber-500/40 bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-amber-950/20 shadow-md shadow-amber-500/5 transition p-3.5 sm:p-5 relative overflow-hidden">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-amber-500/20 text-amber-500 flex items-center justify-center text-xl sm:text-2xl shrink-0">
@@ -708,7 +661,7 @@ export default function SettingsPage({
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 font-mono font-bold">
                         Paul Bettany · Default
                       </span>
-                      {(voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned' && (voicePrefs.ttsEngine ?? 'server') === 'server' && (
+                      {(voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned' && (
                         <span className="text-[10px] sm:text-[11px] font-semibold text-amber-500 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
                           Default Aktif
@@ -754,97 +707,17 @@ export default function SettingsPage({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setVoicePrefs({ ...voicePrefs, ttsServerVoice: 'jarvis-cloned', ttsEngine: 'server' })}
-                  disabled={(voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned' && (voicePrefs.ttsEngine ?? 'server') === 'server'}
+                  onClick={() => setVoicePrefs({ ...voicePrefs, ttsServerVoice: 'jarvis-cloned' })}
+                  disabled={(voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned'}
                   className="w-full sm:w-auto px-4 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:opacity-50 disabled:hover:bg-amber-500 transition shadow-sm"
                 >
-                  {(voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned' && (voicePrefs.ttsEngine ?? 'server') === 'server'
+                  {(voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned'
                     ? '✓ Suara JARVIS Master Aktif'
                     : 'Aktifkan Suara JARVIS Master'}
                 </button>
               </div>
             </div>
 
-            {/* Table / List of ALL items in voice-previews folder */}
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/40 dark:bg-slate-900/40 overflow-hidden shadow-sm">
-              <div className="px-3.5 py-2.5 sm:px-5 sm:py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/60">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                    📂 Daftar 10 File di <code className="font-mono text-cyan-600 dark:text-cyan-400">voice-previews</code>
-                  </span>
-                </div>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">
-                  {voicePreviews.length || 10} File
-                </span>
-              </div>
-
-              <div className="divide-y divide-slate-100 dark:divide-slate-800/60 max-h-[320px] sm:max-h-[380px] overflow-y-auto">
-                {(voicePreviews.length > 0 ? voicePreviews : DEFAULT_VOICE_PREVIEWS).map((f: VoicePreviewItem) => (
-                  <div
-                    key={f.filename}
-                    className={`p-2.5 sm:p-3.5 flex items-start sm:items-center justify-between gap-2 sm:gap-3 transition ${
-                      playingFile === f.filename
-                        ? 'bg-amber-500/10 dark:bg-amber-500/15'
-                        : 'hover:bg-slate-50 dark:hover:bg-slate-900/50'
-                    }`}
-                  >
-                    <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
-                      <button
-                        type="button"
-                        onClick={() => togglePlayPreviewFile(f.url, f.filename)}
-                        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-xs sm:text-sm font-bold transition shrink-0 mt-0.5 sm:mt-0 ${
-                          playingFile === f.filename
-                            ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20 scale-105'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                        }`}
-                        title={playingFile === f.filename ? 'Stop Audio' : 'Putar Audio'}
-                      >
-                        {playingFile === f.filename ? '⏹' : '▶'}
-                      </button>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                            {f.title}
-                          </span>
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
-                            {f.format.toUpperCase()} · {f.size_formatted}
-                          </span>
-                          <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
-                            f.lang === 'ID'
-                              ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
-                              : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
-                          }`}>
-                            {f.lang}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 sm:line-clamp-none mt-0.5">
-                          {f.description}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="shrink-0 self-center">
-                      {f.voice_id && (
-                        <button
-                          type="button"
-                          onClick={() => setVoicePrefs({ ...voicePrefs, ttsServerVoice: f.voice_id, ttsEngine: 'server' })}
-                          className={`text-[11px] px-2.5 py-1 rounded-lg border transition font-medium ${
-                            (voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === f.voice_id && voicePrefs.ttsEngine === 'server'
-                              ? 'bg-cyan-500 text-white border-cyan-500 font-semibold'
-                              : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-cyan-400'
-                          }`}
-                        >
-                          {(voicePrefs.ttsServerVoice ?? 'jarvis-cloned') === f.voice_id && voicePrefs.ttsEngine === 'server'
-                            ? '✓ Aktif'
-                            : 'Gunakan'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
 
           {/* Section: Live TTS Testing Playground */}
@@ -1008,13 +881,29 @@ function Section({
   modelOptions?: string[]
   children?: React.ReactNode
 }) {
+  // Sembunyikan field Base URL untuk provider preset (gemini/claude/openai)
+  // karena sudah auto-managed sesuai provider_type. Hanya Custom yang perlu Base URL.
+  const providerType = String(
+    form['ai.providers.generic.provider_type'] ?? '',
+  ).trim()
+  const hideBaseUrlForPreset =
+    providerType !== '' &&
+    providerType !== 'custom'
+
+  const visibleItems = items.filter((it) => {
+    if (it.key === 'ai.providers.generic.base_url' && hideBaseUrlForPreset) {
+      return false
+    }
+    return true
+  })
+
   return (
     <section className="space-y-4">
       <h2 className="text-sm font-semibold tracking-widest text-slate-600 dark:text-slate-400">
         {title.toUpperCase()}
       </h2>
       <div className="rounded-2xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
-        {items.map((it) => (
+        {visibleItems.map((it) => (
           <div key={it.key} className="p-4 sm:px-5 sm:py-4 grid grid-cols-1 sm:grid-cols-5 gap-3">
             <div className="sm:col-span-2">
               <div className="flex items-center gap-2">
@@ -1089,14 +978,29 @@ function SettingField({
         className={inputBase}
       >
         <option value="local">local — offline demo responder (tanpa API key)</option>
-        <option value="nine_router">nine_router — gateway OpenAI-compatible</option>
+        <option value="generic">generic — API key langsung (Gemini / Claude / OpenAI / Custom)</option>
       </select>
     )
   }
-  // Model utama & fallback — dropdown dari gateway kalau daftar sudah dimuat.
+  // Provider Type — preset provider (Base URL otomatis sesuai pilihan).
+  if (item.key === 'ai.providers.generic.provider_type') {
+    return (
+      <select
+        value={String(value ?? 'custom')}
+        onChange={(e) => onChange(e.target.value)}
+        className={inputBase}
+      >
+        <option value="gemini">🟢 Google Gemini</option>
+        <option value="claude">🟣 Anthropic Claude</option>
+        <option value="openai">⚪ OpenAI (GPT)</option>
+        <option value="custom">⚙️ Custom (OpenRouter / 9Router / gateway lain)</option>
+      </select>
+    )
+  }
+  // Model utama & fallback — dropdown dari provider kalau daftar sudah dimuat.
   if (
-    (item.key === 'ai.providers.nine_router.model' ||
-      item.key === 'ai.providers.nine_router.fallback_model') &&
+    (item.key === 'ai.providers.generic.model' ||
+      item.key === 'ai.providers.generic.fallback_model') &&
     modelOptions.length > 0
   ) {
     const isFallback = item.key.endsWith('fallback_model')

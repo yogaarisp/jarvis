@@ -24,84 +24,66 @@ class AppSettingsService
     public function schema(): array
     {
         return [
-            // ---- AI / 9Router ----
+            // ---- AI Provider (Generic: Gemini / Claude / OpenAI / Custom) ----
             'ai.default' => [
                 'config' => 'ai.default',
                 'type' => 'string',
                 'secret' => false,
                 'label' => 'Default AI Provider',
                 'group' => 'ai',
-                'help' => 'local = offline demo responder; nine_router = gateway OpenAI-compatible.',
+                'help' => 'local = offline demo responder; generic = API key langsung (Gemini/Claude/OpenAI/Custom).',
             ],
-            'ai.providers.nine_router.base_url' => [
-                'config' => 'ai.providers.nine_router.base_url',
+            'ai.providers.generic.provider_type' => [
+                'config' => 'ai.providers.generic.provider_type',
                 'type' => 'string',
                 'secret' => false,
-                'label' => '9Router Base URL',
+                'label' => 'Provider AI',
                 'group' => 'ai',
-                'placeholder' => 'https://9router.keetech.my.id/v1',
-                'help' => 'Endpoint base URL gateway OpenAI-compatible.',
+                'help' => 'Pilih preset — Base URL otomatis terisi sesuai provider. Custom = isi Base URL sendiri.',
             ],
-            'ai.providers.nine_router.api_key' => [
-                'config' => 'ai.providers.nine_router.api_key',
+            'ai.providers.generic.base_url' => [
+                'config' => 'ai.providers.generic.base_url',
+                'type' => 'string',
+                'secret' => false,
+                'label' => 'Base URL (Endpoint)',
+                'group' => 'ai',
+                'placeholder' => '(otomatis sesuai provider) — Custom: https://your-gateway.com/v1',
+                'help' => 'Preset Gemini/Claude/OpenAI: otomatis terisi. Pilih Custom untuk gateway lain (OpenRouter, 9Router, dst).',
+            ],
+            'ai.providers.generic.api_key' => [
+                'config' => 'ai.providers.generic.api_key',
                 'type' => 'string',
                 'secret' => true,
-                'label' => '9Router API Key',
+                'label' => 'API Key',
                 'group' => 'ai',
-                'placeholder' => 'sk-...',
+                'placeholder' => 'sk-... / AIza... / antpk-...',
                 'help' => 'Secret — hanya disimpan server, tidak ditampilkan kembali ke UI.',
             ],
-            'ai.providers.nine_router.model' => [
-                'config' => 'ai.providers.nine_router.model',
+            'ai.providers.generic.model' => [
+                'config' => 'ai.providers.generic.model',
                 'type' => 'string',
                 'secret' => false,
-                'label' => '9Router Model Utama',
+                'label' => 'Model Utama',
                 'group' => 'ai',
-                'placeholder' => 'hermes · combo-sakti · gpt-4o-mini',
-                'help' => 'Nama model persis seperti di gateway. Daftar model dimuat OTOMATIS dari Base URL + API Key — pilih langsung dari dropdown (mis. ai-kee, hermes, combo-jarvis). Dipakai untuk chat utama + agent tool-calling.',
+                'placeholder' => 'gemini-2.0-flash / claude-sonnet-4 / gpt-4o-mini / ...',
+                'help' => 'Nama model persis. Contoh: gemini-2.0-flash, claude-sonnet-4-20250514, gpt-4o-mini, hermes. Jika provider mendukung /models — daftar model muncul otomatis setelah Base URL + API Key terisi.',
             ],
-            'ai.providers.nine_router.fallback_model' => [
-                'config' => 'ai.providers.nine_router.fallback_model',
+            'ai.providers.generic.fallback_model' => [
+                'config' => 'ai.providers.generic.fallback_model',
                 'type' => 'string',
                 'secret' => false,
-                'label' => '9Router Fallback Model',
+                'label' => 'Fallback Model (Opsional)',
                 'group' => 'ai',
-                'placeholder' => '(opsional) hermes · combo-cepat',
-                'help' => 'Otomatis dipakai jika model utama gagal/timeout (mis. hermes sebagai fallback). Pilih dari dropdown daftar model gateway. Kosongkan jika tidak ingin fallback.',
+                'placeholder' => '(kosong = tanpa fallback)',
+                'help' => 'Otomatis dipakai jika model utama gagal/timeout. Kosongkan jika tidak perlu fallback.',
             ],
-            'ai.providers.nine_router.timeout' => [
-                'config' => 'ai.providers.nine_router.timeout',
+            'ai.providers.generic.timeout' => [
+                'config' => 'ai.providers.generic.timeout',
                 'type' => 'integer',
                 'secret' => false,
                 'label' => 'Timeout (detik)',
                 'group' => 'ai',
-            ],
-
-            // ---- Hermes ----
-            'hermes.base_url' => [
-                'config' => 'hermes.base_url',
-                'type' => 'string',
-                'secret' => false,
-                'label' => 'Hermes Base URL',
-                'group' => 'hermes',
-                'placeholder' => 'http://hermes.local:8080',
-                'help' => 'Eksekusi tool eksternal & agent worker.',
-            ],
-            'hermes.api_key' => [
-                'config' => 'hermes.api_key',
-                'type' => 'string',
-                'secret' => true,
-                'label' => 'Hermes API Key',
-                'group' => 'hermes',
-                'placeholder' => 'Bearer token Hermes',
-                'help' => 'Secret — tidak ditampilkan kembali ke UI.',
-            ],
-            'hermes.timeout' => [
-                'config' => 'hermes.timeout',
-                'type' => 'integer',
-                'secret' => false,
-                'label' => 'Hermes Timeout (detik)',
-                'group' => 'hermes',
+                'help' => 'Detik. Model reasoning (Claude Think, Gemini Thinking) disarankan 120+ detik.',
             ],
 
             // ---- JARVIS misc ----

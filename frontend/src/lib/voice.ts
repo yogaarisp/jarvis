@@ -17,7 +17,6 @@ export const DEFAULT_VOICE_PREFS: VoicePrefs = {
   ttsRate: 1,
   ttsPitch: 1,
   language: 'id-ID',
-  ttsEngine: 'server',
   ttsServerVoice: 'jarvis-cloned',
 }
 
@@ -315,18 +314,15 @@ export class TtsEngine {
 
     this.cancel()
 
-    if (this.prefs.ttsEngine !== 'browser') {
-      const isXtts = this.prefs.ttsServerVoice === 'jarvis-cloned'
-      const firstTry = isXtts
-        ? this.speakViaClone(clean, getToken() ?? '')
-            .then((ok) => ok ? true : this.speakViaEdgeFallback(clean))
-        : this.speakViaServer(clean)
-      firstTry.then((ok) => {
-        if (!ok) this.speakBrowser(clean)
-      })
-    } else {
-      this.speakBrowser(clean)
-    }
+    // Selalu pakai server: XTTS clone → Edge TTS fallback → browser TTS sebagai last resort
+    const isXtts = (this.prefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned'
+    const firstTry = isXtts
+      ? this.speakViaClone(clean, getToken() ?? '')
+          .then((ok) => ok ? true : this.speakViaEdgeFallback(clean))
+      : this.speakViaServer(clean)
+    firstTry.then((ok) => {
+      if (!ok) this.speakBrowser(clean)
+    })
   }
 
   /** TTS neural via backend (Microsoft Edge TTS). Return false bila gagal.

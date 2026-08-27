@@ -103,7 +103,7 @@ export function CorePage() {
     const h = new Date().getHours()
     const waktu =
       h >= 4 && h <= 10 ? 'pagi' : h >= 11 && h <= 14 ? 'siang' : h >= 15 && h <= 17 ? 'sore' : 'malam'
-    const greeting = `Hai Keenan, selamat ${waktu}! I'm JARVIS.`
+    const greeting = `Hai Keenan,  I'm JARVIS.`
 
     setLatestTransmission(greeting)
     setMessages((prev) =>

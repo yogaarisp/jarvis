@@ -100,9 +100,7 @@ export interface VoicePrefs {
   language: string
   /** Name of selected SpeechSynthesisVoice (browser). */
   voiceName?: string
-  /** Mesin TTS: server = neural JARVIS (Edge TTS), browser = speechSynthesis lokal. */
-  ttsEngine?: 'server' | 'browser'
-  /** Voice neural server, mis. en-GB-RyanNeural (pria Inggris ala JARVIS). */
+  /** Voice neural server — selalu 'jarvis-cloned' (XTTS v2). */
   ttsServerVoice?: string
   /** Versi skema prefs — untuk migrasi default suara ke pengguna lama. */
   version?: number

@@ -60,18 +60,18 @@ class TtsController extends Controller
             }
         }
 
-        // ---- Tuning default rate & pitch agar tidak datar/robot ----
-        //   Bahasa Indo: cenderung lebih cepat & nada lebih cerah = natural ngobrol.
-        //   Bahasa Inggris: nada tenang, kecepatan mendekati manusia normal.
+        // ---- Tuning rate & pitch agar lebih natural & ekspresif ----
+        // Bahasa Indo: sedikit lebih cepat & nada lebih cerah, natural ngobrol.
+        // Bahasa Inggris (JARVIS): sedikit lebih lambat, tenang & berwibawa.
         if (isset($validated['rate'])) {
             $rate = $validated['rate'];
         } else {
-            $rate = $isId ? '+6%' : '-2%';
+            $rate = $isId ? '+8%' : '-5%';
         }
         if (isset($validated['pitch'])) {
             $pitch = $validated['pitch'];
         } else {
-            $pitch = $isId ? '+8Hz' : '+4Hz';
+            $pitch = $isId ? '+10Hz' : '+2Hz';
         }
 
         $text = $this->naturalizeText($text, $isId ? 'id' : 'en');
@@ -137,6 +137,10 @@ class TtsController extends Controller
         if (! in_array($language, $supported, true)) {
             $language = 'en';
         }
+
+        // Preprocess teks — sama seperti Edge TTS agar lebih natural
+        $text = $this->naturalizeText($text, $language === 'en' ? 'en' : $language);
+        $text = $this->prepareForXtts($text);
 
         // ---- Cache: frasa yang sama tidak disintesis ulang ----
         $cacheDir = storage_path('app/tts-cache');
@@ -510,8 +514,24 @@ class TtsController extends Controller
         $text = preg_replace('/\[\d+\]/u', '', $text) ?? '';
         $text = preg_replace('/<\/?think[^>]*>/iu', ' ', $text) ?? '';
 
+        // Ubah markdown bold/italic/code → teks biasa
+        $text = preg_replace('/\*\*([^*]+)\*\*/u', '$1', $text) ?? '';
+        $text = preg_replace('/\*([^*]+)\*/u', '$1', $text) ?? '';
+        $text = preg_replace('/`([^`]+)`/u', '$1', $text) ?? '';
+        $text = preg_replace('/#{1,6}\s+/u', '', $text) ?? '';
+
+        // Ubah tanda baca tipografi → jeda alami
+        // Titik dua setelah kata → beri jeda dengan koma agar tidak datar
+        $text = preg_replace('/:\s*/u', ', ', $text) ?? '';
+        // Titik koma → jeda sedikit lebih pendek dari titik
+        $text = preg_replace('/;\s*/u', ', ', $text) ?? '';
+        // Tanda hubung em-dash / en-dash → koma
+        $text = preg_replace('/\s*[—–]\s*/u', ', ', $text) ?? '';
+        // Kurung buka/tutup → buang (baca isi saja)
+        $text = preg_replace('/[()[\]{}]/u', '', $text) ?? '';
+
         if ($lang === 'id') {
-            // Ganti kata baku / formal → gaya santai ngobrol (tidak berlebih, agar sopan).
+            // Ganti kata baku / formal → gaya santai ngobrol
             $replace = [
                 'Saya telah ' => 'Saya sudah ',
                 'Saya akan ' => 'Saya bakal ',
@@ -519,58 +539,105 @@ class TtsController extends Controller
                 ' saya akan ' => ' saya bakal ',
                 'Anda ' => 'Keenan ',
                 ' anda ' => ' Keenan ',
-                ' Tuan.' => ' Keenan.',
-                ' Tuan, ' => ' Keenan, ',
-                'Silakan ' => 'Silakan ',
+                ' Tuan.' => '.',
+                ' Tuan, ' => ', ',
                 ' dimohon ' => ' tolong ',
                 ' mohon ' => ' tolong ',
                 ' apakah ' => ' apa ',
                 ' Apakah ' => ' Apa ',
                 'bagaimana cara ' => 'gimana cara ',
                 'Bagaimana cara ' => 'Gimana cara ',
-                'tidak dapat ' => 'gak bisa ',
-                ' tidak bisa ' => ' gak bisa ',
-                'tidak bisa ' => 'gak bisa ',
-                'Tidak bisa ' => 'Gak bisa ',
-                ' demikian ' => ' gitu ',
-                ' .' => '.',
-                ' ,' => ',',
+                'tidak dapat ' => 'tidak bisa ',
+                ' demikian ' => ' begitu ',
             ];
             foreach ($replace as $from => $to) {
                 $text = str_replace($from, $to, $text);
             }
 
-            // Kalau teksnya pendek (≤5 kata, sapaan / konfirmasi) sisipin nama Keenan di akhir.
+            // Tambah jeda sebelum konjungsi panjang agar tidak kecebutan
+            $text = preg_replace('/\s+(tetapi|namun|padahal|sedangkan|sehingga|ketika|saat|jika|kalau|bila|setelah|sebelum|supaya|agar)\b/u', ', $1', $text) ?? $text;
+
+            // Sisipkan nama Keenan untuk sapaan pendek
             $words = preg_split('/\s+/u', trim($text));
             $trimmed = rtrim($text, " .,!?");
             if (is_array($words) && count($words) <= 6 && !str_contains(mb_strtolower($text), 'keenan')) {
-                if (preg_match('/[.!?]$/u', $text, $m)) {
-                    $punct = $m[0];
-                    $text = $trimmed.", Keenan".$punct;
-                } else {
-                    $text = trim($text).", Keenan.";
-                }
+                $punct = preg_match('/[.!?]$/u', $text, $m) ? $m[0] : '.';
+                $text = $trimmed.", Keenan".$punct;
             }
-            // Tambah jeda (titik koma) sebelum konjungsi panjang agar tidak kecebutan.
-            $text = preg_replace('/(,)?\s*(tetapi|namun|padahal|sedangkan|sehingga|sampai|ketika|saat|jika|kalau|bila|setelah|sebelum|supaya|agar)\b/u', ', $2', $text) ?? $text;
         } else {
-            // English casual: sisip Keenan name if short reply.
+            // English: buang sapaan "sir" berulang, ganti dengan nama
+            $text = preg_replace('/\bsir\b\.?\s*/iu', '', $text) ?? $text;
+
+            // Tambah jeda sebelum konjungsi agar ritme lebih manusiawi
+            $text = preg_replace('/\s+(however|although|though|because|therefore|meanwhile|furthermore|moreover|nevertheless)\b/iu', ', $1', $text) ?? $text;
+
+            // Sisipkan nama Keenan untuk respons pendek
             $words = preg_split('/\s+/u', trim($text));
             $trimmed = rtrim($text, " .,!?");
-            if (is_array($words) && count($words) <= 7 && stripos($text, 'Keenan') === false && stripos($text, 'sir') === false) {
-                if (preg_match('/[.!?]$/u', $text, $m)) {
-                    $punct = $m[0];
-                    $text = $trimmed.", Keenan".$punct;
-                } else {
-                    $text = trim($text).", Keenan.";
-                }
+            if (is_array($words) && count($words) <= 7 && stripos($text, 'Keenan') === false) {
+                $punct = preg_match('/[.!?]$/u', $text, $m) ? $m[0] : '.';
+                $text = $trimmed.", Keenan".$punct;
             }
         }
 
-        // Cleanup double spaces & trailing koma.
+        // Cleanup double spaces, trailing koma, & tanda baca ganda
         $text = preg_replace('/\s+/u', ' ', $text) ?? '';
         $text = preg_replace('/\s+([.,!?;:])/u', '$1', $text) ?? '';
         $text = preg_replace('/([.,!?;:]){2,}/u', '$1', $text) ?? '';
+        $text = preg_replace('/,\s*([.!?])/u', '$1', $text) ?? '';
+
+        return trim($text);
+    }
+
+    /**
+     * Persiapkan teks khusus untuk XTTS v2 — model ini sensitif terhadap
+     * tanda baca & format teks. Terlalu banyak koma/titik menyebabkan jeda
+     * berlebih atau artefak audio.
+     */
+    private function prepareForXtts(string $text): string
+    {
+        // XTTS bekerja terbaik dengan kalimat natural tanpa singkatan aneh
+        // Expand singkatan umum → kata penuh agar tidak salah baca
+        $abbr = [
+            'dl.' => 'dan lain-lain.',
+            'dll.' => 'dan lain-lain.',
+            'dsb.' => 'dan sebagainya.',
+            'dst.' => 'dan seterusnya.',
+            'yg ' => 'yang ',
+            'dgn ' => 'dengan ',
+            'utk ' => 'untuk ',
+            'krn ' => 'karena ',
+            'hrs ' => 'harus ',
+            'dpt ' => 'dapat ',
+            ' dr ' => ' dari ',
+            ' ke ' => ' ke ',
+            'e.g.' => 'for example,',
+            'i.e.' => 'that is,',
+            'etc.' => 'and so on.',
+            'vs.' => 'versus',
+        ];
+        foreach ($abbr as $from => $to) {
+            $text = str_ireplace($from, $to, $text);
+        }
+
+        // Batasi panjang kalimat — XTTS kurang stabil untuk kalimat > 200 karakter.
+        // Pecah di titik/koma jika kalimat terlalu panjang.
+        $sentences = preg_split('/(?<=[.!?])\s+/u', $text) ?: [$text];
+        $result = [];
+        foreach ($sentences as $sentence) {
+            if (mb_strlen($sentence) > 200) {
+                // Pecah di koma/titik koma
+                $parts = preg_split('/(?<=,)\s+/u', $sentence) ?: [$sentence];
+                foreach ($parts as $part) {
+                    $trimmed = trim($part);
+                    if ($trimmed !== '') $result[] = $trimmed;
+                }
+            } else {
+                $trimmed = trim($sentence);
+                if ($trimmed !== '') $result[] = $trimmed;
+            }
+        }
+        $text = implode(' ', $result);
 
         return trim($text);
     }

@@ -3,15 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\AI\AIProviderManager;
-use App\AI\NineRouterProvider;
-use App\Hermes\HermesClient;
+use App\AI\GenericAiProvider;
 use App\Http\Controllers\Controller;
 use App\Settings\AppSettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Settings UI untuk Keenan — edit AI key, 9Router, Hermes, dan misc.
+ * Settings UI — edit AI Provider (Gemini/Claude/OpenAI/Custom) via API Key langsung.
  * Semua secret (API key) tidak pernah dikirim sebagai teks ke UI; hanya ditandai is_filled.
  */
 class SettingController extends Controller
@@ -24,8 +23,7 @@ class SettingController extends Controller
     {
         return $this->success([
             'groups' => [
-                'ai' => 'AI Provider & 9Router',
-                'hermes' => 'Hermes — Agent/Tool Worker',
+                'ai' => 'AI Provider — Gemini / Claude / OpenAI / Custom',
                 'jarvis' => 'JARVIS Umum',
             ],
             'items' => $this->settings->allForFrontend(),
@@ -90,30 +88,40 @@ class SettingController extends Controller
     }
 
     /**
-     * Daftar model yang tersedia di gateway 9Router.
+     * Daftar model dari provider AI (endpoint /models — protokol OpenAI-compatible).
      * Base URL / API Key boleh dikirim dari form (belum tersimpan);
      * kalau tidak, pakai nilai config yang sudah di-apply dari DB.
+     * Parameter `provider_type` (opsional) untuk preset auth header (khusus Claude pure).
      */
     public function aiModels(Request $request): JsonResponse
     {
         $payload = $request->validate([
             'base_url' => ['sometimes', 'nullable', 'url'],
             'api_key' => ['sometimes', 'nullable', 'string'],
+            'provider_type' => ['sometimes', 'nullable', 'string', 'in:gemini,claude,openai,custom'],
         ]);
 
-        $baseUrl = ($payload['base_url'] ?? null) ?: (string) config('ai.providers.nine_router.base_url');
-        $apiKey = ($payload['api_key'] ?? null) ?: (string) config('ai.providers.nine_router.api_key');
+        $providerType = ($payload['provider_type'] ?? null)
+            ?: (string) config('ai.providers.generic.provider_type', 'custom');
+        $baseUrl = ($payload['base_url'] ?? null)
+            ?: (string) config('ai.providers.generic.base_url');
+        $apiKey = ($payload['api_key'] ?? null)
+            ?: (string) config('ai.providers.generic.api_key');
 
         if (! filled($baseUrl) || ! filled($apiKey)) {
             return $this->success([
                 'ok' => false,
                 'models' => [],
-                'message' => 'Isi dulu 9Router Base URL dan API Key.',
+                'message' => 'Isi dulu Base URL dan API Key.',
             ]);
         }
 
         try {
-            $provider = new NineRouterProvider(baseUrl: $baseUrl, apiKey: $apiKey);
+            $provider = new GenericAiProvider(
+                providerType: $providerType,
+                baseUrl: $baseUrl,
+                apiKey: $apiKey,
+            );
 
             return $this->success([
                 'ok' => true,
@@ -126,13 +134,5 @@ class SettingController extends Controller
                 'message' => $e->getMessage(),
             ]);
         }
-    }
-
-    /** Test koneksi Hermes (setelah setting DB di-apply). */
-    public function testHermes(): JsonResponse
-    {
-        $client = app(HermesClient::class);
-
-        return $this->success($client->testConnection());
     }
 }

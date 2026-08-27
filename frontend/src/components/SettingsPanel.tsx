@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { SERVER_VOICES, SttEngine, TtsEngine } from '../lib/voice'
+import { useMemo, useState } from 'react'
+import { SttEngine, TtsEngine } from '../lib/voice'
 import type { VoicePrefs, WakeSettings } from '../types'
 
 interface SettingsPanelProps {
@@ -32,16 +32,8 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const sttOk = typeof window !== 'undefined' && 'webkitSpeechRecognition' in window
   const ttsOk = typeof window !== 'undefined' && 'speechSynthesis' in window
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([])
   const [previewSpeaking, setPreviewSpeaking] = useState(false)
   const ttsRef = useMemo(() => (ttsOk ? new TtsEngine(voicePrefs) : null), [ttsOk])
-
-  useEffect(() => {
-    if (!ttsOk) return
-    const refresh = () => setVoices(window.speechSynthesis.getVoices())
-    refresh()
-    window.speechSynthesis.onvoiceschanged = refresh
-  }, [ttsOk])
 
   useEffect(() => {
     ttsRef?.updatePrefs(voicePrefs)
@@ -147,23 +139,6 @@ export function SettingsPanel({
 
           <div className="glass p-4 rounded-xl space-y-3">
             <label className="block">
-              <span className="text-xs text-cyan-200/60 tracking-wide">Mesin Suara (TTS)</span>
-              <select
-                value={voicePrefs.ttsEngine ?? 'server'}
-                onChange={(e) =>
-                  onChangeVoice({
-                    ...voicePrefs,
-                    ttsEngine: e.target.value === 'browser' ? 'browser' : 'server',
-                  })
-                }
-                className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 text-sm px-3 py-2 text-cyan-50"
-              >
-                <option value="server">Server · JARVIS Neural (pria Inggris)</option>
-                <option value="browser">Browser · Suara lokal perangkat</option>
-              </select>
-            </label>
-
-            <label className="block">
               <span className="text-xs text-cyan-200/60 tracking-wide">Bahasa</span>
               <select
                 value={voicePrefs.language}
@@ -176,55 +151,9 @@ export function SettingsPanel({
               </select>
             </label>
 
-            {(voicePrefs.ttsEngine ?? 'server') === 'server' ? (
-              <label className="block">
-                <span className="text-xs text-cyan-200/60 tracking-wide">
-                  Suara JARVIS
-                </span>
-                <select
-                  value={voicePrefs.ttsServerVoice ?? 'jarvis-cloned'}
-                  onChange={(e) =>
-                    onChangeVoice({ ...voicePrefs, ttsServerVoice: e.target.value })
-                  }
-                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 text-sm px-3 py-2 text-cyan-50"
-                >
-                  {SERVER_VOICES.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.label}
-                    </option>
-                  ))}
-                </select>
-                {(() => {
-                  const sel = SERVER_VOICES.find((v) => v.id === (voicePrefs.ttsServerVoice ?? 'jarvis-cloned'))
-                  return sel ? (
-                    <p className="mt-1.5 text-[10px] leading-relaxed text-cyan-300/50">
-                      <span className="text-cyan-400/70">{sel.accent ?? ''}</span>
-                      {sel.desc ? ` · ${sel.desc}` : ''}
-                    </p>
-                  ) : null
-                })()}
-              </label>
-            ) : (
-              voices.length > 0 && (
-              <label className="block">
-                <span className="text-xs text-cyan-200/60 tracking-wide">Suara (TTS)</span>
-                <select
-                  value={voicePrefs.voiceName ?? ''}
-                  onChange={(e) =>
-                    onChangeVoice({ ...voicePrefs, voiceName: e.target.value || undefined })
-                  }
-                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 text-sm px-3 py-2 text-cyan-50"
-                >
-                  <option value="">— Default · Pria Inggris (JARVIS) —</option>
-                  {voices.map((v) => (
-                    <option key={v.name} value={v.name}>
-                      {v.name} ({v.lang})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              )
-            )}
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300/80">
+              🤖 Suara aktif: <span className="font-mono font-bold text-amber-300">JARVIS Master</span> · XTTS v2 Clone (Paul Bettany) — fallback Edge Neural → Browser
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
               <label>

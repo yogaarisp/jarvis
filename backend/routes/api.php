@@ -64,12 +64,11 @@ Route::middleware('auth:sanctum')->group(function () {
     // Phase 9 — Agent RESEARCH (PRD §13).
     Route::post('/research', [ResearchController::class, 'run']);
 
-    // Settings UI — AI keys, 9Router, Hermes, JARVIS misc.
+    // Settings UI — AI keys (Gemini/Claude/OpenAI/Custom), JARVIS misc.
     Route::get('/settings', [SettingController::class, 'index']);
     Route::put('/settings', [SettingController::class, 'update']);
     Route::post('/settings/test-ai', [SettingController::class, 'testAi']);
     Route::post('/settings/ai-models', [SettingController::class, 'aiModels']);
-    Route::post('/settings/test-hermes', [SettingController::class, 'testHermes']);
 
     // PRD §7 — TTS neural server (Edge TTS gratis + XTTS clone lokal).
     Route::get('/tts', [TtsController::class, 'speak']);

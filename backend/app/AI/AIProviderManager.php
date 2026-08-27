@@ -34,6 +34,14 @@ class AIProviderManager
                 fallbackModel: $config['fallback_model'] ?? null,
                 timeout: (int) ($config['timeout'] ?? 120),
             ),
+            'generic' => new GenericAiProvider(
+                providerType: $config['provider_type'] ?? 'custom',
+                baseUrl: $config['base_url'] ?? null,
+                apiKey: $config['api_key'] ?? null,
+                model: $config['model'] ?? null,
+                fallbackModel: $config['fallback_model'] ?? null,
+                timeout: (int) ($config['timeout'] ?? 120),
+            ),
             'local' => new LocalProvider,
             default => throw new InvalidArgumentException("Driver AI [{$config['driver']}] tidak dikenal."),
         };
