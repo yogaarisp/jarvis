@@ -16,7 +16,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ChatController extends Controller
 {
-    private const CONTEXT_WINDOW = 20;
+    private const CONTEXT_WINDOW = 12;
 
     public function __construct(
         private readonly AIProviderManager $providers,

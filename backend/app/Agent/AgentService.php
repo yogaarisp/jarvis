@@ -43,6 +43,21 @@ class AgentService
             throw new RuntimeException('Provider AI aktif tidak mendukung tool calling.');
         }
 
+        // Fast-path: deteksi apakah pesan butuh internet/tool atau bisa langsung dijawab.
+        // Kalau tidak perlu tool, langsung stream agar token pertama muncul secepat mungkin.
+        $lastUserMsg = '';
+        foreach (array_reverse($messages) as $m) {
+            if (($m['role'] ?? '') === 'user') {
+                $lastUserMsg = mb_strtolower((string) ($m['content'] ?? ''));
+                break;
+            }
+        }
+
+        if ($this->isDirectAnswer($lastUserMsg)) {
+            yield from $provider->stream($messages);
+            return;
+        }
+
         $maxRounds = max(1, (int) config('jarvis.agent.max_tool_rounds', 3));
         $tools = self::tools();
         $usedRounds = 0;
@@ -92,6 +107,56 @@ class AgentService
         ];
 
         yield from $provider->stream($messages);
+    }
+
+    /**
+     * Deteksi apakah pesan bisa dijawab langsung tanpa tool (fast-path).
+     * Hindari overhead completeWithTools() untuk chat biasa, sapaan, perintah sistem, dll.
+     */
+    private function isDirectAnswer(string $msg): bool
+    {
+        // Sapaan & small talk
+        $directPatterns = [
+            '/^(hai|halo|hi|hey|hello|hei|pagi|siang|malam|selamat)\b/i',
+            '/^(apa kabar|how are you|how\'s it going|what\'s up)\b/i',
+            '/^(siapa kamu|who are you|apa itu jarvis)\b/i',
+            '/^(terima kasih|makasih|thanks|thank you)\b/i',
+            '/^(oke|ok|baik|siap|noted|iya|ya|yep|yup)\b/i',
+            '/^(selesai|done|lanjut|continue|next)\b/i',
+        ];
+
+        foreach ($directPatterns as $pattern) {
+            if (preg_match($pattern, trim($msg))) {
+                return true;
+            }
+        }
+
+        // Perintah yang tidak butuh internet
+        $noInternetKeywords = [
+            'buka ', 'tutup ', 'matikan ', 'nyalakan ', 'putar ', 'stop ',
+            'open ', 'close ', 'play ', 'pause ',
+            'ingat', 'catat', 'simpan',
+            'hitung', 'berapa', 'konversi',
+            'terjemahkan', 'translate',
+            'tulis', 'buatkan', 'bikin', 'generate',
+            'jelaskan', 'explain',
+            'ringkas', 'summarize',
+            'status sistem', 'system status',
+        ];
+
+        foreach ($noInternetKeywords as $kw) {
+            if (str_contains($msg, $kw)) {
+                return true;
+            }
+        }
+
+        // Pesan pendek (<= 5 kata) umumnya tidak butuh browsing
+        $wordCount = str_word_count($msg);
+        if ($wordCount <= 5) {
+            return true;
+        }
+
+        return false;
     }
 
     /** Definisi tools format OpenAI function-calling. */
@@ -263,7 +328,8 @@ class AgentService
             if (mb_strlen($buffer) >= 40 && trim($piece) !== '') {
                 yield $buffer;
                 $buffer = '';
-                usleep(12_000);
+                // Delay minimal — hanya untuk tidak flood flush terlalu cepat
+                usleep(2_000);
             }
         }
 
