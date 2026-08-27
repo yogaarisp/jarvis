@@ -297,6 +297,24 @@ export function CorePage() {
     let firstDelta = true
     let gotAnyDelta = false
     let finalText = ''
+    // Early TTS — mulai speak segera setelah kalimat pertama terbentuk
+    // tanpa nunggu seluruh streaming selesai.
+    let ttsFired = false
+    let ttsBuffer = ''
+
+    const tryEarlyTts = () => {
+      if (ttsFired || !voicePrefs.ttsEnabled || !ttsRef.current) return
+      // Cari akhir kalimat pertama (titik, tanda tanya, seru)
+      const sentenceEnd = ttsBuffer.search(/[.!?][^.!?]*$/)
+      if (sentenceEnd > 20) {
+        // Ambil teks sampai akhir kalimat pertama yang sudah lengkap
+        const firstSentence = ttsBuffer.slice(0, sentenceEnd + 1).trim()
+        if (firstSentence.length > 15) {
+          ttsFired = true
+          ttsRef.current.speak(firstSentence)
+        }
+      }
+    }
 
     try {
       await streamChat(
@@ -313,20 +331,26 @@ export function CorePage() {
               setState('SPEAKING')
             }
             finalText += text
+            ttsBuffer += text
             setLatestTransmission(finalText)
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId ? { ...m, content: m.content + text } : m,
               ),
             )
+            // Coba speak kalimat pertama segera setelah ada cukup teks
+            if (!ttsFired) tryEarlyTts()
           },
           onDone: () => {
             setState('COMPLETE')
             scheduleIdle(3000)
             loadConversations()
             if (voicePrefs.ttsEnabled && finalText.trim() && ttsRef.current) {
-              // Resume continuous STT ditangani TtsEngine.onEnd setelah bicara selesai.
-              ttsRef.current.speak(finalText)
+              if (!ttsFired) {
+                // Tidak ada kalimat lengkap saat streaming — speak sekarang (teks pendek)
+                ttsRef.current.speak(finalText)
+              }
+              // Kalau sudah ttsFired, TTS sudah berjalan — tidak perlu speak lagi
             } else {
               maybeResumeContinuous()
             }
