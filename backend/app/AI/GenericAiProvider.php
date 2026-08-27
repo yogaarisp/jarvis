@@ -148,7 +148,7 @@ class GenericAiProvider implements AIProviderInterface, ToolCallingProvider
                 $http = $this->httpWithAuth();
                 $response = $http
                     ->timeout($options['timeout'] ?? $this->timeout)
-                    ->connectTimeout(8)
+                    ->connectTimeout(15)
                     ->post($this->resolvedBaseUrl().'/chat/completions', [
                         'model' => $model,
                         'messages' => $messages,
@@ -196,7 +196,7 @@ class GenericAiProvider implements AIProviderInterface, ToolCallingProvider
         $http = $this->httpWithAuth();
         $response = $http
             ->timeout($this->timeout)
-            ->connectTimeout(8)
+            ->connectTimeout(15)
             ->withOptions(['stream' => true])
             ->post($this->resolvedBaseUrl().'/chat/completions', [
                 'model' => $model,

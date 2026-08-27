@@ -3,11 +3,8 @@ import { getToken } from './api'
 
 const PREFS_KEY = 'jarvis_voice_prefs'
 /**
- * Versi skema prefs. Naikkan bila default suara berubah — prefs versi lama
- * di-migrate (suara di-reset ke default baru, preferensi lain dipertahankan).
- * v2: default suara → 'jarvis-cloned' (JARVIS Master / XTTS lokal).
- * v3: default suara → 'en-GB-RyanNeural' (Edge Neural — production-ready di VPS).
- * v4: default suara → 'jarvis-cloned' kembali (hanya JARVIS Master yang ditampilkan di UI).
+ * Versi skema prefs.
+ * v4: default suara → 'jarvis-cloned' (XTTS lokal, fallback Edge TTS).
  */
 const PREFS_VERSION = 4
 
@@ -20,12 +17,8 @@ export const DEFAULT_VOICE_PREFS: VoicePrefs = {
   ttsServerVoice: 'jarvis-cloned',
 }
 
-/** Satu-satunya pilihan suara: JARVIS Master (Paul Bettany) via XTTS clone lokal.
- *  Fallback tetap ada di belakang layar: saat XTTS 503 / tidak tersedia → Edge TTS en-GB-RyanNeural → browser TTS.
- *  (Fallback ini internal dan tidak tampil ke user sebagai pilihan.)
- */
 export const SERVER_VOICES: Array<{ id: string; label: string; desc?: string; accent?: string; cloned?: boolean; engine?: 'edge' | 'xtts' }> = [
-  { id: 'jarvis-cloned', label: 'JARVIS Master (Paul Bettany) ★', desc: 'Suara asli JARVIS film Iron Man via XTTS v2 clone lokal (butuh GPU lokal). Production VPS CPU auto fallback ke Edge TTS Ryan Neural.', accent: 'AI Clone (XTTS v2) → fallback British Ryan Neural', engine: 'xtts', cloned: true },
+  { id: 'jarvis-cloned', label: 'JARVIS Master (Paul Bettany) ★', desc: 'Suara asli JARVIS film Iron Man via XTTS v2 clone lokal. Production VPS auto fallback ke Edge TTS.', accent: 'AI Clone (XTTS v2) → fallback Edge TTS', engine: 'xtts', cloned: true },
 ]
 
 export function loadVoicePrefs(): VoicePrefs {
@@ -34,8 +27,6 @@ export function loadVoicePrefs(): VoicePrefs {
     if (!raw) return { ...DEFAULT_VOICE_PREFS, version: PREFS_VERSION }
     const parsed = JSON.parse(raw) as Partial<VoicePrefs>
     const prefs: VoicePrefs = { ...DEFAULT_VOICE_PREFS, ...parsed }
-    // Migrasi versi lama: terapkan default suara baru (JARVIS Master clone),
-    // preferensi lain (rate, language, engine) tetap dipertahankan.
     if ((parsed.version ?? 1) < PREFS_VERSION) {
       prefs.ttsServerVoice = DEFAULT_VOICE_PREFS.ttsServerVoice
       saveVoicePrefs(prefs)
@@ -59,28 +50,42 @@ export function isTtsAvailable(): boolean {
 }
 
 /**
- * Kandidat suara pria Inggris (ala JARVIS), urut prioritas.
- * Mencakup nama voice umum: Windows (Ryan/Thomas/George), Chrome (Google UK
- * English Male), macOS/iOS (Daniel/Arthur), Android (en-GB Male).
+ * Deteksi bahasa teks secara ringan di sisi frontend.
+ * Return 'id-ID' atau 'en-GB'.
  */
-const UK_MALE_HINTS = [
-  'uk english male',
-  'ryan',
-  'george',
-  'arthur',
-  'daniel',
-  'oliver',
-  'thomas',
-  'liam',
-  'james',
-  'brian',
-  'male',
-]
+export function detectTextLang(text: string): 'id-ID' | 'en-GB' {
+  const t = text.toLowerCase()
+  const idWords = ['yang','dengan','untuk','sudah','belum','bisa','tidak','akan','tetapi',
+    'karena','jika','dari','ini','itu','saya','kamu','ada','jadi','apa','bagaimana',
+    'dong','nih','loh','ya','oke','baik','halo','tolong','makasih','terima','kasih',
+    'sekarang','nanti','besok','tadi','kemarin','gimana','gak','nggak','udah','buat',
+    'bantu','boleh','minta','kalau','supaya','agar','ketika','setelah','sebelum']
+  const enWords = ['the','and','you','that','have','with','this','will','your','from',
+    'they','been','their','what','when','how','why','where','yes','okay','hello',
+    'please','thanks','thank','ready','completed','system','let','can','could',
+    'would','should','here','there','all','just','also','then','but','or','so']
 
-/** Cari voice en-GB pria; fallback ke voice Inggris mana pun. */
-export function pickBritishMaleVoice(
-  voices: SpeechSynthesisVoice[],
-): SpeechSynthesisVoice | undefined {
+  let idScore = 0
+  let enScore = 0
+  for (const w of idWords) {
+    const re = new RegExp(`\\b${w}\\b`)
+    if (re.test(t)) idScore++
+  }
+  for (const w of enWords) {
+    const re = new RegExp(`\\b${w}\\b`)
+    if (re.test(t)) enScore++
+  }
+  // Suffix khas Indonesia
+  const words = t.split(/\s+/)
+  for (const w of words) {
+    if (w.endsWith('nya') || w.endsWith('lah') || w.endsWith('kah') || w.endsWith('kan')) idScore++
+  }
+  return idScore >= enScore ? 'id-ID' : 'en-GB'
+}
+
+const UK_MALE_HINTS = ['uk english male','ryan','george','arthur','daniel','oliver','thomas','liam','james','brian','male']
+
+export function pickBritishMaleVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined {
   if (!voices.length) return undefined
   const gb = voices.filter((v) => v.lang?.toLowerCase().startsWith('en-gb'))
   const pool = gb.length ? gb : voices.filter((v) => v.lang?.toLowerCase().startsWith('en'))
@@ -92,16 +97,10 @@ export function pickBritishMaleVoice(
   return pool[0]
 }
 
-/**
- * STT manager (browser SpeechRecognition).
- *
- * Perhatian (PRD §7):
- *   - Semua perekaman HANYA dijalankan setelah user mengizinkan mic +
- *     (saat PRESS-TO-TALK) menekan tombol.
- *   - Tidak pernah merekam diam-diam — start/stop selalu eksplisit.
- *   - Hasil transkripsi dikirim ke AI sebagai pesan biasa, tidak disimpan
- *     ke storage terpisah selain percakapan.
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// STT Engine
+// ─────────────────────────────────────────────────────────────────────────────
+
 export class SttEngine {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private recognition: any | null = null
@@ -118,14 +117,13 @@ export class SttEngine {
 
   lang: string
   continuous: boolean
+
   constructor(lang: string = 'id-ID', continuous: boolean = false) {
     this.lang = lang
     this.continuous = continuous
   }
 
-  isAvailable(): boolean {
-    return isSttAvailable()
-  }
+  isAvailable(): boolean { return isSttAvailable() }
 
   start(): void {
     if (this.active) return
@@ -133,27 +131,15 @@ export class SttEngine {
       this.onError?.('Speech Recognition tidak didukung browser ini.')
       return
     }
-
-    const Ctor =
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!Ctor) {
-      this.onError?.('Speech Recognition tidak ditemukan.')
-      return
-    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!Ctor) { this.onError?.('Speech Recognition tidak ditemukan.'); return }
 
     const rec = new Ctor() as {
-      lang: string
-      continuous: boolean
-      interimResults: boolean
-      maxAlternatives: number
-      onresult: ((ev: unknown) => void) | null
-      onerror: ((ev: unknown) => void) | null
-      onend: (() => void) | null
-      onstart: (() => void) | null
-      start: () => void
-      stop: () => void
-      abort: () => void
+      lang: string; continuous: boolean; interimResults: boolean; maxAlternatives: number
+      onresult: ((ev: unknown) => void) | null; onerror: ((ev: unknown) => void) | null
+      onend: (() => void) | null; onstart: (() => void) | null
+      start: () => void; stop: () => void; abort: () => void
     }
     rec.lang = this.lang
     rec.continuous = this.continuous
@@ -181,10 +167,7 @@ export class SttEngine {
     rec.onerror = (ev) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const code = ((ev as any)?.error as string) ?? 'unknown'
-      if (code === 'no-speech' || code === 'aborted') {
-        // Tidak perlu log error keras.
-        return
-      }
+      if (code === 'no-speech' || code === 'aborted') return
       const msgMap: Record<string, string> = {
         'not-allowed': 'Izin mikrofon ditolak. Periksa izin browser.',
         'service-not-allowed': 'Layanan STT tidak tersedia.',
@@ -207,62 +190,52 @@ export class SttEngine {
       this.active = false
       if (wasActive) this.onStop?.()
       if (!this.manualStop && this.continuous && this.isAvailable()) {
-        // Auto-restart untuk mode continuous (misal setelah wake-clap).
-        // Diberi jeda agar tidak loop ketat.
-        setTimeout(() => {
-          if (!this.active) this.start()
-        }, 120)
+        setTimeout(() => { if (!this.active) this.start() }, 120)
       }
     }
 
     this.recognition = rec
-    try {
-      rec.start()
-    } catch (e) {
-      // Browser kadang melempar saat sudah start.
-    }
+    try { rec.start() } catch { /* ignore */ }
   }
 
   stop(): string {
     this.manualStop = true
-    try {
-      this.recognition?.stop()
-    } catch {
-      // ignore
-    }
+    try { this.recognition?.stop() } catch { /* ignore */ }
     return this.finalText.trim()
   }
 
   cancel(): void {
     this.manualStop = true
-    try {
-      this.recognition?.abort()
-    } catch {
-      // ignore
-    }
+    try { this.recognition?.abort() } catch { /* ignore */ }
     this.finalText = ''
     this.interimText = ''
   }
 
-  isListening(): boolean {
-    return this.active
-  }
+  isListening(): boolean { return this.active }
 
-  /** Punya transkrip siap dipakai (final maupun interim yang belum difinalisasi). */
   hasTranscript(): boolean {
     return this.finalText.trim() !== '' || this.interimText.trim() !== ''
   }
 }
 
-/**
- * TTS engine berbasis browser speechSynthesis (suara = lokal).
- * PRD §7: tidak perlu cloud, karena teks jawaban relatif pendek.
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// TTS Engine
+//
+// Desain baru: queue-based.
+// speak(text) → segmen ditambahkan ke antrian. Engine memainkan satu per satu.
+// cancel() → bersihkan antrian & hentikan audio yang sedang berjalan.
+//
+// Ini menyelesaikan masalah "sisa teks terpotong" karena speak() lama
+// selalu cancel() audio yang sedang berjalan.
+// ─────────────────────────────────────────────────────────────────────────────
+
 export class TtsEngine {
-  private speaking = false
   private prefs: VoicePrefs
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private currentAudio: any | null = null
+  private queue: string[] = []          // antrian segmen teks
+  private playing = false               // sedang memutar audio
+  private cancelled = false             // flag cancel
 
   onStart?: () => void
   onEnd?: () => void
@@ -275,9 +248,7 @@ export class TtsEngine {
     this.prefs = prefs
   }
 
-  isAvailable(): boolean {
-    return isTtsAvailable()
-  }
+  isAvailable(): boolean { return isTtsAvailable() }
 
   listVoices(): SpeechSynthesisVoice[] {
     if (!this.isAvailable()) return []
@@ -291,7 +262,6 @@ export class TtsEngine {
       const match = voices.find((v) => v.name === this.prefs.voiceName)
       if (match) return match
     }
-    // Default: suara pria Inggris ala JARVIS.
     const uk = pickBritishMaleVoice(voices)
     if (uk) return uk
     const local = voices.find(
@@ -301,138 +271,98 @@ export class TtsEngine {
   }
 
   /**
-   * Ucapkan teks. Bila sedang berbicara, yang lama dibatalkan.
-   * Flow:
-   *   - Edge Neural (pilihan production): /api/tts (backend auto pilih native voice: ID → Ardi, EN → Ryan)
-   *   - XTTS Clone (lokal GPU): /api/tts/clone → fallback ke Edge TTS → browser
-   *   - Browser: speechSynthesis Web Speech API
+   * Tambahkan teks ke antrian dan mulai putar jika belum berjalan.
+   * Tidak membatalkan audio yang sedang berjalan — segmen baru
+   * diputar setelah yang sekarang selesai.
    */
-  speak(text: string): void {
+  enqueue(text: string): void {
     if (!this.prefs.ttsEnabled) return
-    const clean = text.replace(/\[(\d+)\]/g, '').trim()
+    const clean = this.cleanText(text)
     if (!clean) return
-
-    this.cancel()
-
-    // Selalu pakai server: XTTS clone → Edge TTS fallback → browser TTS sebagai last resort
-    const isXtts = (this.prefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned'
-    const firstTry = isXtts
-      ? this.speakViaClone(clean, getToken() ?? '')
-          .then((ok) => ok ? true : this.speakViaEdgeFallback(clean))
-      : this.speakViaServer(clean)
-    firstTry.then((ok) => {
-      if (!ok) this.speakBrowser(clean)
-    })
+    this.queue.push(clean)
+    if (!this.playing) this.playNext()
   }
 
-  /** TTS neural via backend (Microsoft Edge TTS). Return false bila gagal.
-   *  Backend akan override voice ke native (ArdiNeural untuk Indo, Ryan untuk Inggris)
-   *  agar tidak kaku meskipun UI setting = JARVIS Master clone.
+  /**
+   * speak() — untuk kompatibilitas mundur dengan kode yang memanggil speak() langsung.
+   * Jika queue kosong dan tidak sedang play, enqueue biasa.
+   * Jika sedang play, tambahkan ke antrian (tidak cancel).
    */
-  private async speakViaServer(text: string): Promise<boolean> {
+  speak(text: string): void {
+    this.enqueue(text)
+  }
+
+  private cleanText(text: string): string {
+    return text.replace(/\[(\d+)\]/g, '').replace(/```[\s\S]*?```/g, '').trim()
+  }
+
+  private async playNext(): Promise<void> {
+    if (this.queue.length === 0) {
+      this.playing = false
+      if (!this.cancelled) this.onEnd?.()
+      return
+    }
+
+    this.playing = true
+    this.cancelled = false
+    const text = this.queue.shift()!
+
+    // Deteksi bahasa dari teks yang akan diucapkan
+    const lang = detectTextLang(text)
+
     const token = getToken()
-    if (!token) return false
+    if (!token) {
+      this.speakBrowser(text, lang)
+      return
+    }
 
-    const params = new URLSearchParams({ text, lang: this.prefs.language })
-    if (this.prefs.ttsServerVoice) params.set('voice', this.prefs.ttsServerVoice)
-    const rate = Math.round((Math.max(0.6, Math.min(1.6, this.prefs.ttsRate)) - 1) * 100)
-    const pitch = Math.round((Math.max(0.6, Math.min(1.6, this.prefs.ttsPitch)) - 1) * 50)
-    params.set('rate', `${rate >= 0 ? '+' : ''}${rate}%`)
-    params.set('pitch', `${pitch >= 0 ? '+' : ''}${pitch}Hz`)
+    // Coba XTTS clone dulu (lokal GPU) → fallback Edge TTS → browser
+    const isXtts = (this.prefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned'
+    let ok = false
 
-    try {
-      const resp = await fetch(`/api/tts?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!resp.ok) return false
-      const blob = await resp.blob()
-      if (!blob.size) return false
-
-      const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
-      this.currentAudio = audio
-      audio.onplay = () => {
-        this.speaking = true
-        this.onStart?.()
-      }
-      audio.onended = () => {
-        URL.revokeObjectURL(url)
-        this.speaking = false
-        this.currentAudio = null
-        this.onEnd?.()
-      }
-      audio.onerror = () => {
-        URL.revokeObjectURL(url)
-        this.speaking = false
-        this.currentAudio = null
-        this.onEnd?.()
-      }
-      await audio.play()
-      return true
-    } catch {
-      return false
+    if (isXtts) {
+      ok = await this.speakViaClone(text, token, lang)
+    }
+    if (!ok) {
+      ok = await this.speakViaEdge(text, token, lang)
+    }
+    if (!ok) {
+      this.speakBrowser(text, lang)
     }
   }
 
   /**
-   * Kirim ke endpoint XTTS clone (/api/tts/clone).
-   * Fallback otomatis ke Edge TTS bila XTTS disabled/gagal.
+   * XTTS clone — suara JARVIS lokal. Return false bila tidak tersedia (503) atau gagal.
    */
-  private async speakViaClone(text: string, token: string): Promise<boolean> {
-    // Deteksi bahasa: id-ID → 'id' tidak didukung XTTS, maka kirim 'en'
-    const xttsLang = this.prefs.language.startsWith('id') ? 'en' : this.prefs.language.split('-')[0]
+  private async speakViaClone(text: string, token: string, lang: string): Promise<boolean> {
+    // XTTS tidak support id-ID → kirim 'en' agar model tidak crash
+    const xttsLang = lang.startsWith('id') ? 'en' : lang.split('-')[0]
     const params = new URLSearchParams({ text, language: xttsLang })
 
     try {
       const resp = await fetch(`/api/tts/clone?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      // 503 = XTTS disabled → fallback ke Edge TTS native bahasa
-      if (resp.status === 503) return false
+      if (resp.status === 503) return false   // XTTS disabled di server
       if (!resp.ok) return false
       const blob = await resp.blob()
       if (!blob.size) return false
-
-      const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
-      this.currentAudio = audio
-      audio.onplay = () => {
-        this.speaking = true
-        this.onStart?.()
-      }
-      audio.onended = () => {
-        URL.revokeObjectURL(url)
-        this.speaking = false
-        this.currentAudio = null
-        this.onEnd?.()
-      }
-      audio.onerror = () => {
-        URL.revokeObjectURL(url)
-        this.speaking = false
-        this.currentAudio = null
-        this.onEnd?.()
-      }
-      await audio.play()
-      return true
+      return await this.playBlob(blob, 'audio/wav')
     } catch {
       return false
     }
   }
 
   /**
-   * Fallback: Edge TTS setelah XTTS clone gagal.
-   * Tidak hardcode Ryan British lagi → kirim `lang` dan backend akan
-   * pilih native voice (ID → ArdiNeural, EN → RyanNeural) agar tidak kaku.
+   * Edge TTS via backend — auto pilih voice sesuai bahasa.
+   * Backend: ID → ArdiNeural, EN → RyanNeural.
    */
-  private async speakViaEdgeFallback(text: string): Promise<boolean> {
-    const token = getToken()
-    if (!token) return false
-
+  private async speakViaEdge(text: string, token: string, lang: string): Promise<boolean> {
     const rate = Math.round((Math.max(0.6, Math.min(1.6, this.prefs.ttsRate)) - 1) * 100)
     const pitch = Math.round((Math.max(0.6, Math.min(1.6, this.prefs.ttsPitch)) - 1) * 50)
     const params = new URLSearchParams({
       text,
-      lang: this.prefs.language,
+      lang,
       rate: `${rate >= 0 ? '+' : ''}${rate}%`,
       pitch: `${pitch >= 0 ? '+' : ''}${pitch}Hz`,
     })
@@ -444,72 +374,90 @@ export class TtsEngine {
       if (!resp.ok) return false
       const blob = await resp.blob()
       if (!blob.size) return false
-
-      const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
-      this.currentAudio = audio
-      audio.onplay = () => { this.speaking = true; this.onStart?.() }
-      audio.onended = () => { URL.revokeObjectURL(url); this.speaking = false; this.currentAudio = null; this.onEnd?.() }
-      audio.onerror = () => { URL.revokeObjectURL(url); this.speaking = false; this.currentAudio = null; this.onEnd?.() }
-      await audio.play()
-      return true
+      return await this.playBlob(blob, 'audio/mpeg')
     } catch {
       return false
     }
   }
 
-  private speakBrowser(text: string): void {
-    if (!this.isAvailable()) return
+  /**
+   * Putar blob audio. Menunggu sampai selesai lalu lanjut ke antrian berikutnya.
+   */
+  private playBlob(blob: Blob, _mime: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      if (this.cancelled) { resolve(false); return }
+
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      this.currentAudio = audio
+
+      audio.onplay = () => { this.onStart?.() }
+
+      audio.onended = () => {
+        URL.revokeObjectURL(url)
+        this.currentAudio = null
+        if (!this.cancelled) {
+          // Jika ini segmen terakhir → onEnd akan dipanggil di playNext()
+          this.playNext()
+        }
+        resolve(true)
+      }
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(url)
+        this.currentAudio = null
+        resolve(false)
+      }
+
+      audio.play().catch(() => resolve(false))
+    })
+  }
+
+  private speakBrowser(text: string, lang: string): void {
+    if (!this.isAvailable()) {
+      this.playing = false
+      this.onEnd?.()
+      return
+    }
 
     const utter = new SpeechSynthesisUtterance(text)
-    utter.lang = this.prefs.language
+    utter.lang = lang
     utter.rate = Math.max(0.5, Math.min(2, this.prefs.ttsRate))
     utter.pitch = Math.max(0, Math.min(2, this.prefs.ttsPitch))
     const v = this.pickVoice()
     if (v) utter.voice = v
 
-    utter.onstart = () => {
-      this.speaking = true
-      this.onStart?.()
-    }
+    utter.onstart = () => { this.onStart?.() }
     utter.onend = () => {
-      this.speaking = false
-      this.onEnd?.()
+      if (!this.cancelled) this.playNext()
     }
     utter.onerror = () => {
-      this.speaking = false
+      this.playing = false
       this.onEnd?.()
     }
 
     window.speechSynthesis.speak(utter)
   }
 
+  /**
+   * Hentikan semua audio dan kosongkan antrian.
+   */
   cancel(): void {
+    this.cancelled = true
+    this.queue = []
+    this.playing = false
+
     if (this.currentAudio) {
-      try {
-        this.currentAudio.pause()
-      } catch {
-        // ignore
-      }
+      try { this.currentAudio.pause() } catch { /* ignore */ }
       this.currentAudio = null
-      if (this.speaking) {
-        this.speaking = false
-        this.onEnd?.()
-      }
     }
-    if (!this.isAvailable()) return
-    try {
-      window.speechSynthesis.cancel()
-    } catch {
-      // ignore
-    }
-    if (this.speaking) {
-      this.speaking = false
-      this.onEnd?.()
+
+    if (this.isAvailable()) {
+      try { window.speechSynthesis.cancel() } catch { /* ignore */ }
     }
   }
 
   isSpeaking(): boolean {
-    return this.speaking
+    return this.playing
   }
 }

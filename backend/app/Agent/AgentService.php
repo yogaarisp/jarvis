@@ -115,8 +115,6 @@ class AgentService
      */
     private function isDirectAnswer(string $msg): bool
     {
-        $msg = trim($msg);
-
         // Sapaan & small talk
         $directPatterns = [
             '/^(hai|halo|hi|hey|hello|hei|pagi|siang|malam|selamat)\b/i',
@@ -128,38 +126,22 @@ class AgentService
         ];
 
         foreach ($directPatterns as $pattern) {
-            if (preg_match($pattern, $msg)) {
+            if (preg_match($pattern, trim($msg))) {
                 return true;
             }
         }
 
-        // Topik yang BUTUH internet — jangan di-bypass
-        $needsInternetKeywords = [
-            'berita', 'news', 'terkini', 'hari ini', 'today', 'sekarang', 'now',
-            'harga', 'price', 'cuaca', 'weather', 'jadwal', 'schedule',
-            'siapa presiden', 'who is president', 'berapa kurs', 'exchange rate',
-            'cari', 'search', 'carikan', 'find', 'lookup',
-            'terbaru', 'latest', 'update', 'trending',
-        ];
-
-        foreach ($needsInternetKeywords as $kw) {
-            if (str_contains($msg, $kw)) {
-                return false; // Harus lewat agent
-            }
-        }
-
-        // Perintah sistem / lokal yang tidak butuh internet
+        // Perintah yang tidak butuh internet
         $noInternetKeywords = [
             'buka ', 'tutup ', 'matikan ', 'nyalakan ', 'putar ', 'stop ',
             'open ', 'close ', 'play ', 'pause ',
             'ingat', 'catat', 'simpan',
-            'hitung', 'konversi', 'convert',
+            'hitung', 'berapa', 'konversi',
             'terjemahkan', 'translate',
-            'tulis', 'buatkan', 'bikin', 'generate', 'buat ',
-            'jelaskan', 'explain', 'apa itu', 'what is',
-            'ringkas', 'summarize', 'rangkum',
+            'tulis', 'buatkan', 'bikin', 'generate',
+            'jelaskan', 'explain',
+            'ringkas', 'summarize',
             'status sistem', 'system status',
-            'tolong ', 'boleh ', 'bisa ',
         ];
 
         foreach ($noInternetKeywords as $kw) {
@@ -168,15 +150,13 @@ class AgentService
             }
         }
 
-        // Pesan pendek (<= 8 kata) umumnya tidak butuh browsing
+        // Pesan pendek (<= 5 kata) umumnya tidak butuh browsing
         $wordCount = str_word_count($msg);
-        if ($wordCount <= 8) {
+        if ($wordCount <= 5) {
             return true;
         }
 
-        // Default: query panjang tanpa kata kunci internet → anggap bisa dijawab langsung
-        // Model tetap bisa jawab dari pengetahuannya tanpa browsing
-        return true;
+        return false;
     }
 
     /** Definisi tools format OpenAI function-calling. */

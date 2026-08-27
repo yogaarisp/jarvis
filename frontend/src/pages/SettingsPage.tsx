@@ -978,7 +978,7 @@ function SettingField({
         className={inputBase}
       >
         <option value="local">local — offline demo responder (tanpa API key)</option>
-        <option value="generic">generic — API key langsung (Gemini / Custom)</option>
+        <option value="generic">generic — API key langsung (Gemini / Claude / OpenAI / Custom)</option>
       </select>
     )
   }
