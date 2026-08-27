@@ -297,21 +297,40 @@ export function CorePage() {
     let firstDelta = true
     let gotAnyDelta = false
     let finalText = ''
-    // Early TTS — mulai speak segera setelah kalimat pertama terbentuk
-    // tanpa nunggu seluruh streaming selesai.
+    // Early TTS — prefetch audio saat delta pertama, play saat kalimat pertama lengkap
     let ttsFired = false
     let ttsBuffer = ''
+    let prefetchPromise: Promise<(() => Promise<boolean>) | null> | null = null
+    let prefetchReady: (() => Promise<boolean>) | null = null
 
     const tryEarlyTts = () => {
       if (ttsFired || !voicePrefs.ttsEnabled || !ttsRef.current) return
       // Cari akhir kalimat pertama (titik, tanda tanya, seru)
       const sentenceEnd = ttsBuffer.search(/[.!?][^.!?]*$/)
       if (sentenceEnd > 20) {
-        // Ambil teks sampai akhir kalimat pertama yang sudah lengkap
         const firstSentence = ttsBuffer.slice(0, sentenceEnd + 1).trim()
         if (firstSentence.length > 15) {
           ttsFired = true
-          ttsRef.current.speak(firstSentence)
+          // Kalau prefetch sudah selesai, pakai hasilnya langsung (zero delay)
+          if (prefetchReady) {
+            prefetchReady().then((ok) => {
+              if (!ok) ttsRef.current?.speak(firstSentence)
+            })
+          } else if (prefetchPromise) {
+            // Prefetch masih jalan — tunggu selesai lalu play
+            prefetchPromise.then((playFn) => {
+              if (playFn) {
+                prefetchReady = playFn
+                playFn().then((ok) => {
+                  if (!ok) ttsRef.current?.speak(firstSentence)
+                })
+              } else {
+                ttsRef.current?.speak(firstSentence)
+              }
+            })
+          } else {
+            ttsRef.current.speak(firstSentence)
+          }
         }
       }
     }
@@ -329,6 +348,12 @@ export function CorePage() {
               firstDelta = false
               gotAnyDelta = true
               setState('SPEAKING')
+              // Mulai prefetch audio di background saat delta pertama datang
+              // Gunakan teks sementara; nanti akan di-override oleh kalimat pertama yang lengkap
+              if (voicePrefs.ttsEnabled && ttsRef.current) {
+                prefetchPromise = ttsRef.current.prefetch(text)
+                prefetchPromise.then((fn) => { prefetchReady = fn })
+              }
             }
             finalText += text
             ttsBuffer += text
