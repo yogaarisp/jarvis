@@ -39,7 +39,7 @@ const DEFAULT_WAKE: WakeSettings = {
 type TabKey = 'ai' | 'jarvis' | 'voice' | 'wake'
 
 const TABS: { key: TabKey; label: string; desc: string }[] = [
-  { key: 'ai', label: 'AI Provider', desc: 'Pilih provider (Gemini/Claude/OpenAI/Custom), Base URL, API Key, model.' },
+  { key: 'ai', label: 'AI Provider', desc: 'Pilih provider (Gemini/Custom), Base URL, API Key, model.' },
   { key: 'jarvis', label: 'JARVIS', desc: 'System prompt dan batas riset default.' },
   { key: 'voice', label: 'Voice & Previews', desc: 'Sample audio voice-previews, STT & TTS neural.' },
   { key: 'wake', label: 'Wake Engine', desc: 'Double/triple clap wake via mic lokal.' },
@@ -978,7 +978,7 @@ function SettingField({
         className={inputBase}
       >
         <option value="local">local — offline demo responder (tanpa API key)</option>
-        <option value="generic">generic — API key langsung (Gemini / Claude / OpenAI / Custom)</option>
+        <option value="generic">generic — API key langsung (Gemini / Custom)</option>
       </select>
     )
   }
@@ -991,8 +991,6 @@ function SettingField({
         className={inputBase}
       >
         <option value="gemini">🟢 Google Gemini</option>
-        <option value="claude">🟣 Anthropic Claude</option>
-        <option value="openai">⚪ OpenAI (GPT)</option>
         <option value="custom">⚙️ Custom (OpenRouter / 9Router / gateway lain)</option>
       </select>
     )
