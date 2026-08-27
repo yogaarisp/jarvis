@@ -314,80 +314,15 @@ export class TtsEngine {
 
     this.cancel()
 
-    // Langsung ke Edge TTS — XTTS hanya dipakai kalau enabled
+    // Selalu pakai server: XTTS clone → Edge TTS fallback → browser TTS sebagai last resort
     const isXtts = (this.prefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned'
-    const token = getToken() ?? ''
-
-    if (isXtts && token) {
-      // Coba XTTS dulu; kalau 503 (disabled) langsung fallback Edge tanpa delay
-      this.speakViaClone(clean, token).then((ok) => {
-        if (!ok) return this.speakViaEdgeFallback(clean)
-        return true
-      }).then((ok) => {
-        if (!ok) this.speakBrowser(clean)
-      })
-    } else {
-      // Langsung Edge TTS — skip XTTS sama sekali
-      this.speakViaEdgeFallback(clean).then((ok) => {
-        if (!ok) this.speakBrowser(clean)
-      })
-    }
-  }
-
-  /**
-   * Prefetch audio ke server TTS tanpa langsung play.
-   * Dipanggil saat delta pertama streaming masuk agar audio siap lebih awal.
-   * Return: fungsi play() yang bisa dipanggil kapan pun, atau null kalau gagal.
-   */
-  async prefetch(text: string): Promise<(() => Promise<boolean>) | null> {
-    if (!this.prefs.ttsEnabled) return null
-    const clean = text.replace(/\[(\d+)\]/g, '').trim()
-    if (!clean) return null
-
-    const token = getToken()
-    if (!token) return null
-
-    try {
-      const params = new URLSearchParams({ text: clean, lang: this.prefs.language })
-      const resp = await fetch(`/api/tts?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!resp.ok) return null
-      const blob = await resp.blob()
-      if (!blob.size) return null
-
-      const url = URL.createObjectURL(blob)
-
-      // Return fungsi play yang bisa dipanggil nanti
-      return async () => {
-        // Kalau ada audio lain sedang jalan, batalkan dulu
-        this.cancel()
-        const audio = new Audio(url)
-        this.currentAudio = audio
-        audio.onplay = () => { this.speaking = true; this.onStart?.() }
-        audio.onended = () => {
-          URL.revokeObjectURL(url)
-          this.speaking = false
-          this.currentAudio = null
-          this.onEnd?.()
-        }
-        audio.onerror = () => {
-          URL.revokeObjectURL(url)
-          this.speaking = false
-          this.currentAudio = null
-          this.onEnd?.()
-        }
-        try {
-          await audio.play()
-          return true
-        } catch {
-          URL.revokeObjectURL(url)
-          return false
-        }
-      }
-    } catch {
-      return null
-    }
+    const firstTry = isXtts
+      ? this.speakViaClone(clean, getToken() ?? '')
+          .then((ok) => ok ? true : this.speakViaEdgeFallback(clean))
+      : this.speakViaServer(clean)
+    firstTry.then((ok) => {
+      if (!ok) this.speakBrowser(clean)
+    })
   }
 
   /** TTS neural via backend (Microsoft Edge TTS). Return false bila gagal.

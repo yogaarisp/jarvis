@@ -32,6 +32,7 @@ export function CorePage() {
   const [showLogs, setShowLogs] = useState(true)
   const [micLevel] = useState(0)
   const [micActive, setMicActive] = useState(false)
+  const [wakeRunning, setWakeRunning] = useState(false)
   const [inputText, setInputText] = useState('')
   const [latestTransmission, setLatestTransmission] = useState<string>('')
 
@@ -101,9 +102,8 @@ export function CorePage() {
   // jadi briefing suara diantrekan dan diucapkan pada klik/tekan tombol pertama.
   useEffect(() => {
     const h = new Date().getHours()
-    const waktu =
-      h >= 4 && h <= 10 ? 'pagi' : h >= 11 && h <= 14 ? 'siang' : h >= 15 && h <= 17 ? 'sore' : 'malam'
-    const greeting = `Hai Keenan,  I'm JARVIS.`
+    const waktu = h >= 4 && h <= 10 ? 'pagi' : h >= 11 && h <= 14 ? 'siang' : h >= 15 && h <= 17 ? 'sore' : 'malam'
+    const greeting = `Hai Keenan. I'm JARVIS.`
 
     setLatestTransmission(greeting)
     setMessages((prev) =>
@@ -207,6 +207,8 @@ export function CorePage() {
     engine.onStop = () => {
       continuousSttRef.current = null
       setState((s) => (s === 'LISTENING' ? 'IDLE' : s))
+      // Kalau continuous STT berhenti sendiri (bukan karena toggle off), sync state
+      if (!continuousDesiredRef.current) setWakeRunning(false)
     }
     engine.onError = (msg) => {
       setLatestTransmission(`MIC: ${msg}`)
@@ -221,6 +223,17 @@ export function CorePage() {
     continuousDesiredRef.current = false
     continuousSttRef.current?.cancel()
     continuousSttRef.current = null
+  }
+
+  function handleToggleWake() {
+    if (wakeRunning) {
+      stopContinuousStt()
+      setWakeRunning(false)
+    } else {
+      if (!sttAvailable || !voicePrefs.sttEnabled || busyRef.current) return
+      startContinuousStt()
+      setWakeRunning(true)
+    }
   }
 
   // Cleanup on unmount
@@ -297,40 +310,23 @@ export function CorePage() {
     let firstDelta = true
     let gotAnyDelta = false
     let finalText = ''
-    // Early TTS — prefetch audio saat delta pertama, play saat kalimat pertama lengkap
-    let ttsFired = false
+    // Early TTS — mulai speak segera setelah kalimat pertama terbentuk
+    // tanpa nunggu seluruh streaming selesai.
+    // Setelah kalimat pertama di-speak, sisa teks tetap dikumpulkan di
+    // ttsRemaining dan di-speak setelah streaming selesai.
+    let earlySpoken = ''   // teks yang sudah di-speak via early TTS
     let ttsBuffer = ''
-    let prefetchPromise: Promise<(() => Promise<boolean>) | null> | null = null
-    let prefetchReady: (() => Promise<boolean>) | null = null
 
     const tryEarlyTts = () => {
-      if (ttsFired || !voicePrefs.ttsEnabled || !ttsRef.current) return
+      if (earlySpoken || !voicePrefs.ttsEnabled || !ttsRef.current) return
       // Cari akhir kalimat pertama (titik, tanda tanya, seru)
       const sentenceEnd = ttsBuffer.search(/[.!?][^.!?]*$/)
       if (sentenceEnd > 20) {
+        // Ambil teks sampai akhir kalimat pertama yang sudah lengkap
         const firstSentence = ttsBuffer.slice(0, sentenceEnd + 1).trim()
         if (firstSentence.length > 15) {
-          ttsFired = true
-          // Kalau prefetch sudah selesai, pakai hasilnya langsung (zero delay)
-          if (prefetchReady) {
-            prefetchReady().then((ok) => {
-              if (!ok) ttsRef.current?.speak(firstSentence)
-            })
-          } else if (prefetchPromise) {
-            // Prefetch masih jalan — tunggu selesai lalu play
-            prefetchPromise.then((playFn) => {
-              if (playFn) {
-                prefetchReady = playFn
-                playFn().then((ok) => {
-                  if (!ok) ttsRef.current?.speak(firstSentence)
-                })
-              } else {
-                ttsRef.current?.speak(firstSentence)
-              }
-            })
-          } else {
-            ttsRef.current.speak(firstSentence)
-          }
+          earlySpoken = firstSentence
+          ttsRef.current.speak(firstSentence)
         }
       }
     }
@@ -348,12 +344,6 @@ export function CorePage() {
               firstDelta = false
               gotAnyDelta = true
               setState('SPEAKING')
-              // Mulai prefetch audio di background saat delta pertama datang
-              // Gunakan teks sementara; nanti akan di-override oleh kalimat pertama yang lengkap
-              if (voicePrefs.ttsEnabled && ttsRef.current) {
-                prefetchPromise = ttsRef.current.prefetch(text)
-                prefetchPromise.then((fn) => { prefetchReady = fn })
-              }
             }
             finalText += text
             ttsBuffer += text
@@ -364,18 +354,35 @@ export function CorePage() {
               ),
             )
             // Coba speak kalimat pertama segera setelah ada cukup teks
-            if (!ttsFired) tryEarlyTts()
+            if (!earlySpoken) tryEarlyTts()
           },
           onDone: () => {
             setState('COMPLETE')
             scheduleIdle(3000)
             loadConversations()
             if (voicePrefs.ttsEnabled && finalText.trim() && ttsRef.current) {
-              if (!ttsFired) {
-                // Tidak ada kalimat lengkap saat streaming — speak sekarang (teks pendek)
+              if (!earlySpoken) {
+                // Tidak ada kalimat lengkap saat streaming — speak seluruh teks (jawaban pendek)
                 ttsRef.current.speak(finalText)
+              } else {
+                // Sudah speak kalimat pertama via early TTS.
+                // Speak sisa teks yang belum dibacakan (setelah kalimat pertama).
+                const remaining = finalText.slice(earlySpoken.length).trim()
+                if (remaining) {
+                  // Queue setelah early TTS selesai: ganti onEnd sementara agar tidak restart mic dulu
+                  const prevOnEnd = ttsRef.current.onEnd
+                  ttsRef.current.onEnd = () => {
+                    if (ttsRef.current) ttsRef.current.onEnd = prevOnEnd
+                    prevOnEnd?.()
+                  }
+                  // Speak sisa — engine akan queue setelah yang sedang berjalan selesai
+                  // (cancel dulu tidak diperlukan karena kita hanya append)
+                  // Gunakan timeout kecil agar tidak bentrok dengan audio yang sedang play
+                  window.setTimeout(() => {
+                    if (ttsRef.current && remaining) ttsRef.current.speak(remaining)
+                  }, 100)
+                }
               }
-              // Kalau sudah ttsFired, TTS sudah berjalan — tidak perlu speak lagi
             } else {
               maybeResumeContinuous()
             }
@@ -538,6 +545,7 @@ export function CorePage() {
             state={state}
             micActive={micActive}
             wakeListening={state === 'LISTENING'}
+            wakeRunning={wakeRunning}
             micDisabled={micDisabled}
             voicePrefs={voicePrefs}
             sttAvailable={sttAvailable}
@@ -546,6 +554,7 @@ export function CorePage() {
             onInputChange={setInputText}
             onSubmit={handleFormSubmit}
             onToggleMic={handleToggleMic}
+            onToggleWake={handleToggleWake}
             onMouseDownMic={() => !micDisabled && pushToTalkRef.current?.start()}
             onMouseUpMic={() => {
               if (!micDisabled && pushToTalkRef.current?.isListening()) {

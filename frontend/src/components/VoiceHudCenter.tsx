@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { JarvisState, VoicePrefs } from '../types'
 
@@ -14,6 +15,7 @@ interface VoiceHudCenterProps {
   onInputChange: (val: string) => void
   onSubmit: (e: FormEvent) => void
   onToggleMic: (e: React.MouseEvent) => void
+  onToggleWake?: () => void
   onMouseDownMic: () => void
   onMouseUpMic: () => void
   onMouseLeaveMic: () => void
@@ -32,6 +34,7 @@ export function VoiceHudCenter({
   onInputChange,
   onSubmit,
   onToggleMic,
+  onToggleWake,
   onMouseDownMic,
   onMouseUpMic,
   onMouseLeaveMic,
@@ -40,45 +43,62 @@ export function VoiceHudCenter({
   busy,
 }: VoiceHudCenterProps) {
   const isListening = micActive || state === 'LISTENING'
+  const [showInput, setShowInput] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Auto-focus input saat muncul
+  useEffect(() => {
+    if (showInput) {
+      setTimeout(() => inputRef.current?.focus(), 50)
+    }
+  }, [showInput])
+
+  function handleSubmit(e: FormEvent) {
+    onSubmit(e)
+    // Sembunyikan input setelah submit
+    setShowInput(false)
+  }
 
   return (
     <div className="relative flex flex-col items-center justify-between h-full w-full max-w-2xl px-2 py-2 sm:py-3">
-      {/* Top Center: LATEST TRANSMISSION Box */}
-      <div className="hud-corner-box w-full max-w-lg rounded-lg sm:rounded-xl border border-cyan-400/40 p-2 sm:p-3 text-center shadow-[0_0_20px_rgba(0,229,255,0.12)]">
-        <div className="font-mono-tech text-[9px] sm:text-[10px] font-semibold tracking-[0.2em] sm:tracking-[0.3em] text-cyan-400/60 uppercase">
-          LATEST TRANSMISSION
-        </div>
-        <div className="font-mono-tech mt-1 text-[11px] sm:text-xs md:text-sm font-bold tracking-wider text-cyan-100 min-h-[1.2rem] sm:min-h-[1.5rem] max-h-[3rem] overflow-y-auto no-scrollbar flex items-center justify-center">
-          {latestTransmission ? (
-            <span className={state === 'ERROR' ? 'text-rose-400 text-glow-red' : 'text-cyan-200 text-glow-cyan'}>
-              {latestTransmission}
-            </span>
-          ) : (
-            <span className="text-cyan-300/80">SYSTEM ONLINE: JARVIS CORE READY</span>
-          )}
+
+      {/* Top: Latest Transmission */}
+      <div className="w-full max-w-md">
+        <div className="rounded-xl border border-cyan-400/25 bg-cyan-950/30 backdrop-blur-sm px-4 py-2.5 text-center">
+          <div className={`font-mono-tech text-xs sm:text-sm font-medium tracking-wide leading-snug ${
+            state === 'ERROR' ? 'text-rose-400' : 'text-cyan-200/90'
+          }`}>
+            {latestTransmission || (
+              <span className="text-cyan-400/50 text-[11px] tracking-widest">JARVIS ONLINE</span>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Spacer for 3D Globe in the background */}
-      <div className="flex-1 min-h-[80px] sm:min-h-[140px] pointer-events-none" />
+      {/* Spacer — globe di background */}
+      <div className="flex-1 pointer-events-none" />
 
-      {/* Center Bottom: Arc Reactor Voice HUD */}
-      <div className="relative flex flex-col items-center z-20 mt-auto mb-1 sm:mb-2">
-        {/* Pulsing Arc Rings when listening / speaking */}
-        <div className="relative flex items-center justify-center">
-          {/* Animated concentric pulse rings */}
-          <div
-            className={`absolute h-24 w-24 rounded-full border border-cyan-400/30 transition-all duration-700 ${
-              isListening ? 'animate-ping opacity-60' : 'opacity-20'
-            }`}
-          />
-          <div
-            className={`absolute h-20 w-20 rounded-full border border-cyan-300/40 transition-all ${
-              isListening ? 'animate-spin-core border-dashed' : 'border-dotted opacity-30'
-            }`}
-          />
+      {/* Bottom Controls */}
+      <div className="flex flex-col items-center gap-3 w-full max-w-sm z-20">
 
-          {/* Central Circular Mic / Arc Reactor Button */}
+        {/* Status label */}
+        <div className="font-mono-tech flex items-center gap-2 text-[10px] tracking-[0.2em] text-cyan-400/60">
+          <span className={`h-1.5 w-1.5 rounded-full transition-colors ${
+            isListening
+              ? 'bg-rose-400 shadow-[0_0_6px_#f43f5e] animate-ping'
+              : wakeRunning
+                ? 'bg-emerald-400 shadow-[0_0_6px_#34d399] animate-pulse'
+                : 'bg-cyan-500/40'
+          }`} />
+          <span>
+            {isListening ? 'LISTENING' : wakeRunning ? 'WAKE ACTIVE' : 'STANDBY'}
+          </span>
+        </div>
+
+        {/* Mic + Keyboard buttons */}
+        <div className="flex items-center gap-4">
+
+          {/* Mic Button */}
           <button
             type="button"
             disabled={micDisabled}
@@ -88,89 +108,103 @@ export function VoiceHudCenter({
             onMouseLeave={onMouseLeaveMic}
             onTouchStart={onTouchStartMic}
             onTouchEnd={onTouchEndMic}
-            title="Klik atau tahan untuk bicara (Lepas = Kirim)"
-            aria-label="Voice Activation"
-            className={`group relative flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-full border-2 transition-all duration-300 ${
+            title="Tahan untuk bicara"
+            aria-label="Voice input"
+            className={`relative flex h-14 w-14 items-center justify-center rounded-full border-2 transition-all duration-300 ${
               isListening
-                ? 'border-rose-400 bg-rose-500/20 shadow-[0_0_25px_#f43f5e]'
+                ? 'border-rose-400 bg-rose-500/20 shadow-[0_0_28px_#f43f5e,0_0_60px_rgba(244,63,94,0.2)]'
                 : state === 'SPEAKING'
-                  ? 'border-amber-400 bg-amber-500/20 shadow-[0_0_25px_#fbbf24]'
-                  : 'border-cyan-400 bg-cyan-950/60 shadow-[0_0_20px_#00e5ff] hover:shadow-[0_0_30px_#00e5ff] hover:scale-105 active:scale-95'
-            } ${micDisabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                  ? 'border-amber-400 bg-amber-500/15 shadow-[0_0_28px_#fbbf24]'
+                  : 'border-cyan-400/70 bg-cyan-950/50 shadow-[0_0_20px_rgba(0,229,255,0.3)] hover:shadow-[0_0_32px_rgba(0,229,255,0.5)] hover:scale-105 active:scale-95'
+            } ${micDisabled ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
           >
-            {/* Inner Core Glow */}
-            <div
-              className={`h-9 w-9 rounded-full flex items-center justify-center transition-all ${
-                isListening
-                  ? 'bg-rose-500/40'
-                  : state === 'SPEAKING'
-                    ? 'bg-amber-400/40'
-                    : 'bg-cyan-500/20 group-hover:bg-cyan-500/40'
+            {/* Outer ring pulse saat listening */}
+            {isListening && (
+              <span className="absolute inset-0 rounded-full border border-rose-400/40 animate-ping" />
+            )}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              className={`h-5 w-5 ${
+                isListening ? 'text-rose-300 animate-pulse' :
+                state === 'SPEAKING' ? 'text-amber-300' : 'text-cyan-300'
               }`}
             >
-              {/* Mic Icon */}
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                className={`h-5 w-5 ${
-                  isListening
-                    ? 'text-rose-300 animate-pulse'
-                    : state === 'SPEAKING'
-                      ? 'text-amber-300'
-                      : 'text-cyan-300'
-                }`}
-              >
-                <rect x="9" y="3" width="6" height="11" rx="3" />
-                <path d="M5 11a7 7 0 0 0 14 0M12 18v3" strokeLinecap="round" />
-              </svg>
-            </div>
+              <rect x="9" y="3" width="6" height="11" rx="3" />
+              <path d="M5 11a7 7 0 0 0 14 0M12 18v3" strokeLinecap="round" />
+            </svg>
           </button>
-        </div>
 
-        {/* Listening Status Badge */}
-        <div className="mt-2 sm:mt-3">
-          <div className="font-mono-tech flex items-center gap-1.5 sm:gap-2 rounded-full border border-cyan-500/40 bg-cyan-950/70 px-2.5 sm:px-3.5 py-1 text-[9px] sm:text-[11px] font-bold tracking-[0.15em] sm:tracking-[0.2em] text-cyan-300 shadow-[0_0_12px_rgba(0,229,255,0.2)]">
-            <span
-              className={`h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full ${
-                isListening
-                  ? 'bg-rose-400 shadow-[0_0_8px_#f43f5e] animate-ping'
-                  : 'bg-cyan-400 shadow-[0_0_8px_#00e5ff]'
-              }`}
-            />
-            <span>
-              {isListening
-                ? 'RECORDING...'
-                : wakeRunning
-                  ? 'WAKE AKTIF // TEPUK LALU BICARA'
-                  : 'STANDBY // VOICE READY'}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Cyber Command Prompt Input Bar */}
-      <form onSubmit={onSubmit} className="w-full z-20 mt-1">
-        <div className="hud-panel flex items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl p-1 sm:p-1.5 pl-2 sm:pl-3 border border-cyan-500/40 shadow-[0_0_15px_rgba(0,229,255,0.15)]">
-          <span className="font-mono-tech text-cyan-400 font-bold text-xs sm:text-sm tracking-widest">&gt;</span>
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => onInputChange(e.target.value)}
-            disabled={busy}
-            placeholder="TYPE COMMAND..."
-            className="font-mono-tech w-full bg-transparent py-1.5 sm:py-2 text-[11px] sm:text-xs md:text-sm text-cyan-100 placeholder:text-cyan-400/30 outline-none tracking-wider"
-          />
+          {/* Keyboard Button */}
           <button
-            type="submit"
-            disabled={busy || !inputText.trim()}
-            className="font-mono-tech hud-btn rounded-md sm:rounded-lg px-2.5 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold tracking-[0.15em] sm:tracking-[0.2em] text-cyan-300 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed"
+            type="button"
+            onClick={() => setShowInput((v) => !v)}
+            title="Ketik pesan"
+            aria-label="Keyboard input"
+            className={`flex h-14 w-14 items-center justify-center rounded-full border-2 transition-all duration-300 ${
+              showInput
+                ? 'border-cyan-400 bg-cyan-500/20 shadow-[0_0_20px_rgba(0,229,255,0.4)]'
+                : 'border-cyan-400/30 bg-cyan-950/40 text-cyan-400/60 hover:border-cyan-400/60 hover:text-cyan-300 hover:shadow-[0_0_16px_rgba(0,229,255,0.25)]'
+            } cursor-pointer`}
           >
-            {busy ? '...' : 'EXEC'}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
+              className={`h-5 w-5 ${showInput ? 'text-cyan-300' : 'text-cyan-400/60'}`}
+            >
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <path d="M8 8h.01M12 8h.01M16 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10" strokeLinecap="round" />
+            </svg>
           </button>
+
+          {/* Wake Engine Button */}
+          {onToggleWake && (
+            <button
+              type="button"
+              onClick={onToggleWake}
+              disabled={busy}
+              title={wakeRunning ? 'Matikan Wake Engine' : 'Aktifkan Wake Engine'}
+              aria-label="Wake engine toggle"
+              className={`flex h-14 w-14 items-center justify-center rounded-full border-2 transition-all duration-300 ${
+                wakeRunning
+                  ? 'border-emerald-400/80 bg-emerald-950/40 shadow-[0_0_20px_rgba(52,211,153,0.35)]'
+                  : 'border-cyan-400/30 bg-cyan-950/40 hover:border-emerald-400/40 hover:shadow-[0_0_16px_rgba(52,211,153,0.2)]'
+              } ${busy ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+            >
+              {/* Wave/Sound icon */}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
+                className={`h-5 w-5 ${wakeRunning ? 'text-emerald-300' : 'text-cyan-400/60'}`}
+              >
+                <path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6" strokeLinecap="round" />
+              </svg>
+            </button>
+          )}
         </div>
-      </form>
+
+        {/* Input bar — muncul saat showInput = true */}
+        <div className={`w-full overflow-hidden transition-all duration-300 ease-in-out ${
+          showInput ? 'max-h-20 opacity-100 translate-y-0' : 'max-h-0 opacity-0 -translate-y-1 pointer-events-none'
+        }`}>
+          <form onSubmit={handleSubmit} className="w-full">
+            <div className="flex items-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-950/60 backdrop-blur-sm px-3 py-2 shadow-[0_0_20px_rgba(0,229,255,0.1)]">
+              <span className="font-mono-tech text-cyan-400/70 font-bold text-sm">&gt;</span>
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputText}
+                onChange={(e) => onInputChange(e.target.value)}
+                disabled={busy}
+                placeholder="Type your command..."
+                className="font-mono-tech flex-1 bg-transparent py-1 text-xs sm:text-sm text-cyan-100 placeholder:text-cyan-400/30 outline-none tracking-wide"
+              />
+              <button
+                type="submit"
+                disabled={busy || !inputText.trim()}
+                className="font-mono-tech rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-[10px] font-bold tracking-widest text-cyan-300 transition-all hover:bg-cyan-500/20 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {busy ? '···' : 'SEND'}
+              </button>
+            </div>
+          </form>
+        </div>
+
+      </div>
     </div>
   )
 }
