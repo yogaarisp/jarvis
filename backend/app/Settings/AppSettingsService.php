@@ -191,9 +191,12 @@ class AppSettingsService
             }
             $meta = $schema[$key];
 
-            if ($meta['secret'] && $incoming === '') {
-                // User tidak mengirim apa-apa ke field secret = skip.
-                // Ini memungkinkan update group AI tanpa kirim API key berulang.
+            if ($meta['secret'] && ($incoming === null || $incoming === '')) {
+                // Kosong = jangan ubah secret yang sudah tersimpan.
+                // Catatan: middleware ConvertEmptyStringsToNull mengubah input ''
+                // menjadi null, jadi keduanya harus di-skip agar menyimpan
+                // pengaturan lain (mis. ganti model) tidak ikut menghapus
+                // API key yang sudah ada.
                 continue;
             }
 
