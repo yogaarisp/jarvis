@@ -236,9 +236,15 @@ export class TtsEngine {
   private queue: string[] = []          // antrian segmen teks
   private playing = false               // sedang memutar audio
   private cancelled = false             // flag cancel
+  // Prefetch — sintesis segmen berikutnya di background SELAGI segmen
+  // saat ini diputar, agar transisi antar segmen mulus tanpa jeda
+  // (menghilangkan efek suara "patah-patah" akibat latensi sintesis XTTS).
+  private prefetch = new Map<string, Promise<Blob | null>>()
 
   onStart?: () => void
   onEnd?: () => void
+  /** Dipanggil bila autoplay diblokir browser (belum ada interaksi user). */
+  onBlocked?: () => void
 
   constructor(prefs?: VoicePrefs) {
     this.prefs = prefs ?? loadVoicePrefs()
@@ -246,6 +252,7 @@ export class TtsEngine {
 
   updatePrefs(prefs: VoicePrefs): void {
     this.prefs = prefs
+    this.prefetch.clear()
   }
 
   isAvailable(): boolean { return isTtsAvailable() }
@@ -280,7 +287,12 @@ export class TtsEngine {
     const clean = this.cleanText(text)
     if (!clean) return
     this.queue.push(clean)
-    if (!this.playing) this.playNext()
+    if (!this.playing) {
+      this.playNext()
+      return
+    }
+    // Sedang memutar — pastikan segmen berikutnya sudah disintesis di background.
+    this.startPrefetch()
   }
 
   /**
@@ -296,9 +308,29 @@ export class TtsEngine {
     return text.replace(/\[(\d+)\]/g, '').replace(/```[\s\S]*?```/g, '').trim()
   }
 
+  /** Kosongkan slot prefetch (saat cancel/prefs berubah/antrian habis). */
+  private clearPrefetch(): void {
+    this.prefetch.clear()
+  }
+
+  /**
+   * Mulai sintesis 2 segmen terdepan antrian di background.
+   * Dipanggil saat playback berjalan — hasilnya langsung siap diputar
+   * begitu segmen sekarang selesai, tanpa menunggu sintesis ulang.
+   */
+  private startPrefetch(): void {
+    if (this.prefetch.size >= 2) return
+    for (const text of this.queue.slice(0, 2)) {
+      if (this.prefetch.has(text)) continue
+      if (this.prefetch.size >= 2) break
+      this.prefetch.set(text, this.synthesize(text).catch(() => null))
+    }
+  }
+
   private async playNext(): Promise<void> {
     if (this.queue.length === 0) {
       this.playing = false
+      this.clearPrefetch()
       if (!this.cancelled) this.onEnd?.()
       return
     }
@@ -307,34 +339,56 @@ export class TtsEngine {
     this.cancelled = false
     const text = this.queue.shift()!
 
-    // Deteksi bahasa dari teks yang akan diucapkan
-    const lang = detectTextLang(text)
+    // Pakai hasil prefetch bila tersedia; jika tidak, sintesis sekarang.
+    let blob: Blob | null = null
+    const pending = this.prefetch.get(text)
+    if (pending) {
+      blob = await pending
+      this.prefetch.delete(text)
+    }
+    blob ??= await this.synthesize(text)
 
-    const token = getToken()
-    if (!token) {
-      this.speakBrowser(text, lang)
+    if (this.cancelled) return
+
+    if (blob) {
+      // Selagi segmen ini diputar, sintesis segmen berikutnya di background.
+      this.startPrefetch()
+      const ok = await this.playBlob(blob)
+      if (this.cancelled) return
+      if (!ok) {
+        // Gagal memutar blob → coba mesin browser sebagai fallback.
+        this.speakBrowser(text, detectTextLang(text))
+        return
+      }
+      this.playNext()
       return
     }
 
-    // Coba XTTS clone dulu (lokal GPU) → fallback Edge TTS → browser
-    const isXtts = (this.prefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned'
-    let ok = false
-
-    if (isXtts) {
-      ok = await this.speakViaClone(text, token, lang)
-    }
-    if (!ok) {
-      ok = await this.speakViaEdge(text, token, lang)
-    }
-    if (!ok) {
-      this.speakBrowser(text, lang)
-    }
+    // Tidak ada blob dari server (XTTS + Edge gagal) → mesin browser.
+    this.speakBrowser(text, detectTextLang(text))
   }
 
   /**
-   * XTTS clone — suara JARVIS lokal. Return false bila tidak tersedia (503) atau gagal.
+   * Sintesis teks → Blob audio.
+   * Coba XTTS clone dulu (lokal GPU) → fallback Edge TTS via backend.
+   * Return null bila keduanya tidak tersedia (pemutar browser jadi fallback).
    */
-  private async speakViaClone(text: string, token: string, lang: string): Promise<boolean> {
+  private async synthesize(text: string): Promise<Blob | null> {
+    const lang = detectTextLang(text)
+    const token = getToken()
+    if (!token) return null
+    const isXtts = (this.prefs.ttsServerVoice ?? 'jarvis-cloned') === 'jarvis-cloned'
+    if (isXtts) {
+      const blob = await this.fetchClone(text, token, lang)
+      if (blob) return blob
+    }
+    return this.fetchEdge(text, token, lang)
+  }
+
+  /**
+   * XTTS clone — suara JARVIS lokal. Return null bila disabled (503) atau gagal.
+   */
+  private async fetchClone(text: string, token: string, lang: string): Promise<Blob | null> {
     // XTTS tidak support id-ID → kirim 'en' agar model tidak crash
     const xttsLang = lang.startsWith('id') ? 'en' : lang.split('-')[0]
     const params = new URLSearchParams({ text, language: xttsLang })
@@ -343,13 +397,12 @@ export class TtsEngine {
       const resp = await fetch(`/api/tts/clone?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (resp.status === 503) return false   // XTTS disabled di server
-      if (!resp.ok) return false
+      if (resp.status === 503) return null   // XTTS disabled di server
+      if (!resp.ok) return null
       const blob = await resp.blob()
-      if (!blob.size) return false
-      return await this.playBlob(blob, 'audio/wav')
+      return blob.size ? blob : null
     } catch {
-      return false
+      return null
     }
   }
 
@@ -357,7 +410,7 @@ export class TtsEngine {
    * Edge TTS via backend — auto pilih voice sesuai bahasa.
    * Backend: ID → ArdiNeural, EN → RyanNeural.
    */
-  private async speakViaEdge(text: string, token: string, lang: string): Promise<boolean> {
+  private async fetchEdge(text: string, token: string, lang: string): Promise<Blob | null> {
     const rate = Math.round((Math.max(0.6, Math.min(1.6, this.prefs.ttsRate)) - 1) * 100)
     const pitch = Math.round((Math.max(0.6, Math.min(1.6, this.prefs.ttsPitch)) - 1) * 50)
     const params = new URLSearchParams({
@@ -371,19 +424,18 @@ export class TtsEngine {
       const resp = await fetch(`/api/tts?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (!resp.ok) return false
+      if (!resp.ok) return null
       const blob = await resp.blob()
-      if (!blob.size) return false
-      return await this.playBlob(blob, 'audio/mpeg')
+      return blob.size ? blob : null
     } catch {
-      return false
+      return null
     }
   }
 
   /**
    * Putar blob audio. Menunggu sampai selesai lalu lanjut ke antrian berikutnya.
    */
-  private playBlob(blob: Blob, _mime: string): Promise<boolean> {
+  private playBlob(blob: Blob): Promise<boolean> {
     return new Promise((resolve) => {
       if (this.cancelled) { resolve(false); return }
 
@@ -409,7 +461,10 @@ export class TtsEngine {
         resolve(false)
       }
 
-      audio.play().catch(() => resolve(false))
+      audio.play().catch((err: unknown) => {
+        if ((err as DOMException | undefined)?.name === 'NotAllowedError') this.onBlocked?.()
+        resolve(false)
+      })
     })
   }
 
@@ -431,7 +486,8 @@ export class TtsEngine {
     utter.onend = () => {
       if (!this.cancelled) this.playNext()
     }
-    utter.onerror = () => {
+    utter.onerror = (ev) => {
+      if (ev?.error === 'not-allowed') this.onBlocked?.()
       this.playing = false
       this.onEnd?.()
     }
@@ -446,6 +502,7 @@ export class TtsEngine {
     this.cancelled = true
     this.queue = []
     this.playing = false
+    this.clearPrefetch()
 
     if (this.currentAudio) {
       try { this.currentAudio.pause() } catch { /* ignore */ }

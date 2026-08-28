@@ -97,9 +97,12 @@ export function CorePage() {
     return () => engine.cancel()
   }, [ttsAvailable, voicePrefs, maybeResumeContinuous])
 
-  // Initial welcome greeting — time-aware, ditampilkan & diucapkan tiap halaman dibuka/refresh.
-  // Catatan: browser memblokir audio sebelum interaksi pertama (autoplay policy),
-  // jadi briefing suara diantrekan dan diucapkan pada klik/tekan tombol pertama.
+  // Greeting sambutan — JARVIS menyapa & berbicara otomatis saat halaman muncul.
+  // Catatan autoplay policy browser:
+  //  - Diizinkan bila PWA terinstal, MEI domain tinggi, atau sudah ada aktivasi
+  //    user di dokumen (SPA tanpa reload) → langsung bicara tanpa interaksi.
+  //  - Bila diblokir (refresh tanpa interaksi) → onBlocked memasang fallback:
+  //    menyapa pada aksi pertama (klik/tekan tombol apa pun).
   useEffect(() => {
     const greeting = `Hai Keenan. I'm JARVIS.`
 
@@ -108,20 +111,53 @@ export function CorePage() {
       prev.length === 0 ? [{ id: Date.now(), role: 'assistant', content: greeting }] : prev,
     )
 
+    if (!loadVoicePrefs().ttsEnabled) return
+
     let pending = greeting
-    const speakPending = () => {
+    let fallbackAttached = false
+
+    const speakOnGesture = () => {
       if (!pending) return
       const g = pending
       pending = ''
       ttsRef.current?.speak(g)
-      window.removeEventListener('pointerdown', speakPending)
-      window.removeEventListener('keydown', speakPending)
+      detachFallback()
     }
-    window.addEventListener('pointerdown', speakPending)
-    window.addEventListener('keydown', speakPending)
+
+    const attachFallback = () => {
+      if (fallbackAttached) return
+      fallbackAttached = true
+      window.addEventListener('pointerdown', speakOnGesture)
+      window.addEventListener('keydown', speakOnGesture)
+    }
+
+    const detachFallback = () => {
+      fallbackAttached = false
+      window.removeEventListener('pointerdown', speakOnGesture)
+      window.removeEventListener('keydown', speakOnGesture)
+    }
+
+    const engine = ttsRef.current
+    if (!engine) return
+
+    const prevOnBlocked = engine.onBlocked
+    engine.onBlocked = () => {
+      pending = greeting
+      attachFallback()
+    }
+
+    // Jeda kecil agar engine siap, lalu coba bicara langsung tanpa menunggu interaksi.
+    const t = window.setTimeout(() => {
+      if (!pending) return
+      engine.speak(pending)
+      // Sukses diasumsikan — onBlocked memasang fallback bila autoplay diblokir.
+      pending = ''
+    }, 500)
+
     return () => {
-      window.removeEventListener('pointerdown', speakPending)
-      window.removeEventListener('keydown', speakPending)
+      window.clearTimeout(t)
+      detachFallback()
+      engine.onBlocked = prevOnBlocked
     }
   }, [])
 
@@ -308,24 +344,29 @@ export function CorePage() {
     let firstDelta = true
     let gotAnyDelta = false
     let finalText = ''
-    // Early TTS — mulai speak segera setelah kalimat pertama terbentuk
-    // tanpa nunggu seluruh streaming selesai.
-    // Setelah kalimat pertama di-speak, sisa teks tetap dikumpulkan di
-    // ttsRemaining dan di-speak setelah streaming selesai.
-    let earlySpoken = ''   // teks yang sudah di-speak via early TTS
-    let ttsBuffer = ''
+    // Speak per kalimat selagi streaming: tiap kalimat yang lengkap langsung
+    // di-enqueue, dan engine mem-prefetch kalimat berikutnya di background —
+    // hasilnya suara mengalir tanpa jeda "patah-patah".
+    let spokenLen = 0
 
-    const tryEarlyTts = () => {
-      if (earlySpoken || !voicePrefs.ttsEnabled || !ttsRef.current) return
-      // Cari akhir kalimat pertama (titik, tanda tanya, seru)
-      const sentenceEnd = ttsBuffer.search(/[.!?][^.!?]*$/)
-      if (sentenceEnd > 20) {
-        // Ambil teks sampai akhir kalimat pertama yang sudah lengkap
-        const firstSentence = ttsBuffer.slice(0, sentenceEnd + 1).trim()
-        if (firstSentence.length > 15) {
-          earlySpoken = firstSentence
-          ttsRef.current.speak(firstSentence)
+    const speakCompletedSentences = () => {
+      if (!voicePrefs.ttsEnabled || !ttsRef.current) return
+      for (;;) {
+        const rest = finalText.slice(spokenLen)
+        const re = /[.!?]+(\s|$)/g
+        let cut = -1
+        let m: RegExpExecArray | null
+        while ((m = re.exec(rest)) !== null) {
+          const chunk = rest.slice(0, m.index + m[0].length)
+          const trimmed = chunk.trim()
+          if (trimmed.length < 15) continue        // terlalu pendek → gabung ke chunk berikutnya
+          if (/^\d+[.)]$/.test(trimmed)) continue  // skip nomor list "1." / "2)"
+          cut = chunk.length
+          break
         }
+        if (cut < 0) break
+        ttsRef.current.enqueue(rest.slice(0, cut))
+        spokenLen += cut
       }
     }
 
@@ -344,43 +385,24 @@ export function CorePage() {
               setState('SPEAKING')
             }
             finalText += text
-            ttsBuffer += text
             setLatestTransmission(finalText)
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId ? { ...m, content: m.content + text } : m,
               ),
             )
-            // Coba speak kalimat pertama segera setelah ada cukup teks
-            if (!earlySpoken) tryEarlyTts()
+            // Speak tiap kalimat yang sudah lengkap selagi streaming
+            speakCompletedSentences()
           },
           onDone: () => {
             setState('COMPLETE')
             scheduleIdle(3000)
             loadConversations()
             if (voicePrefs.ttsEnabled && finalText.trim() && ttsRef.current) {
-              if (!earlySpoken) {
-                // Tidak ada kalimat lengkap saat streaming — speak seluruh teks (jawaban pendek)
-                ttsRef.current.speak(finalText)
-              } else {
-                // Sudah speak kalimat pertama via early TTS.
-                // Speak sisa teks yang belum dibacakan (setelah kalimat pertama).
-                const remaining = finalText.slice(earlySpoken.length).trim()
-                if (remaining) {
-                  // Queue setelah early TTS selesai: ganti onEnd sementara agar tidak restart mic dulu
-                  const prevOnEnd = ttsRef.current.onEnd
-                  ttsRef.current.onEnd = () => {
-                    if (ttsRef.current) ttsRef.current.onEnd = prevOnEnd
-                    prevOnEnd?.()
-                  }
-                  // Speak sisa — engine akan queue setelah yang sedang berjalan selesai
-                  // (cancel dulu tidak diperlukan karena kita hanya append)
-                  // Gunakan timeout kecil agar tidak bentrok dengan audio yang sedang play
-                  window.setTimeout(() => {
-                    if (ttsRef.current && remaining) ttsRef.current.speak(remaining)
-                  }, 100)
-                }
-              }
+              // Sisa teks setelah kalimat-kalimat yang sudah di-speak saat streaming.
+              // enqueue menambahkan ke antrian engine (tidak memotong yang sedang berputar).
+              const remaining = finalText.slice(spokenLen).trim()
+              if (remaining) ttsRef.current.enqueue(remaining)
             } else {
               maybeResumeContinuous()
             }
