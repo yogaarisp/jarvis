@@ -46,17 +46,27 @@ export function VoiceHudCenter({
   const [showInput, setShowInput] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Auto-focus input saat muncul
+  // Auto-focus input saat muncul (cleanup timer agar tidak reopen keyboard saat bar ditutup)
   useEffect(() => {
-    if (showInput) {
-      setTimeout(() => inputRef.current?.focus(), 50)
-    }
+    if (!showInput) return
+    const t = setTimeout(() => inputRef.current?.focus(), 50)
+    return () => clearTimeout(t)
   }, [showInput])
 
   function handleSubmit(e: FormEvent) {
     onSubmit(e)
-    // Sembunyikan input setelah submit
+    // Blur sebelum menyembunyikan bar agar keyboard virtual HP ikut menutup otomatis.
+    inputRef.current?.blur()
     setShowInput(false)
+  }
+
+  function toggleInput() {
+    if (showInput) {
+      inputRef.current?.blur()
+      setShowInput(false)
+    } else {
+      setShowInput(true)
+    }
   }
 
   return (
@@ -136,7 +146,7 @@ export function VoiceHudCenter({
           {/* Keyboard Button */}
           <button
             type="button"
-            onClick={() => setShowInput((v) => !v)}
+            onClick={toggleInput}
             title="Ketik pesan"
             aria-label="Keyboard input"
             className={`flex h-14 w-14 items-center justify-center rounded-full border-2 transition-all duration-300 ${
@@ -190,6 +200,8 @@ export function VoiceHudCenter({
                 value={inputText}
                 onChange={(e) => onInputChange(e.target.value)}
                 disabled={busy}
+                enterKeyHint="send"
+                autoComplete="off"
                 placeholder="Type your command..."
                 className="font-mono-tech flex-1 bg-transparent py-1 text-xs sm:text-sm text-cyan-100 placeholder:text-cyan-400/30 outline-none tracking-wide"
               />

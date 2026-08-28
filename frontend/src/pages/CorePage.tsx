@@ -101,8 +101,6 @@ export function CorePage() {
   // Catatan: browser memblokir audio sebelum interaksi pertama (autoplay policy),
   // jadi briefing suara diantrekan dan diucapkan pada klik/tekan tombol pertama.
   useEffect(() => {
-    const h = new Date().getHours()
-    const waktu = h >= 4 && h <= 10 ? 'pagi' : h >= 11 && h <= 14 ? 'siang' : h >= 15 && h <= 17 ? 'sore' : 'malam'
     const greeting = `Hai Keenan. I'm JARVIS.`
 
     setLatestTransmission(greeting)

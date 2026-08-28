@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { SttEngine, TtsEngine } from '../lib/voice'
 import type { VoicePrefs, WakeSettings } from '../types'
 
@@ -59,7 +59,6 @@ export function SettingsPanel({
       ttsRate: 1,
       ttsPitch: 1,
       language: 'id-ID',
-      ttsEngine: 'server',
       ttsServerVoice: 'jarvis-cloned',
       voiceName: undefined,
     }
